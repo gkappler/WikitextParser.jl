@@ -3,6 +3,16 @@ uuid = "64de3d48-60e8-4f3e-a9aa-9e0644af0863"
 authors = ["Gregor Kappler"]
 version = "0.1.0"
 
+[deps]
+BasePiracy = "487cab20-c1cc-457b-b83b-8a75c3c82131"
+CodecBzip2 = "523fee87-0ab8-5b00-afb7-3ecf72e48cfd"
+InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
+LibExpat = "522f3ed2-3f36-55e3-b6df-e94fee9b0c07"
+ParserAlchemy = "5ae71ed2-6f8a-4ed1-b94f-e14e8158f19e"
+TextParse = "e0df1984-e451-5cb5-8b61-797a481e67e3"
+TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+VectorDicts = "a01be448-a150-47eb-8a58-dea694c08700"
+
 [compat]
 julia = "1"
 
