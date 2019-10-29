@@ -6,6 +6,7 @@ using ParserAlchemy
 using ParserAlchemy.Tokens
 import ParserAlchemy: inline, splitter, newline, whitespace, rep_delim_par, word, delimiter, indentation
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
+import ParserAlchemy.Tokens: Token, Node
 import ParserAlchemy.Tokens: Token, Template, TokenPair, Line, LineContent, Paragraph
 import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_heading
 
@@ -26,7 +27,7 @@ expand_numbers = seq(
         alt(instance(Vector{String},(v,i)->["$x" for x in v], int_range),
             instance(Vector{String},(v,i)->[v], r"[0-9]+[[:alpha:]]*")),
         ## regex: allow whitespace
-        r" *, *";
+        r" *[,/] *";
     ), "]";
     transform=(v,i) -> vcat(v[2]...))
 
@@ -47,49 +48,17 @@ function Base.show(io::IO, v::Title{S,T}) where {S,T}
     print(io, v.text)
 end
 
-
 wdelim = r"^[ \t\r\n]*"
-wikitext=alt(
-    LineContent,
-    bracket_number, ## todo: make a line type? see ordo [5]a-c
-    bracket_reference,
+
+attributes = alternate(
     seq(Token,
-        "<", wdelim,
-        # 3
-        word, wdelim, ## todo: lookback!!
-        # 5
-        alternate(
-            seq(String,
-                word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
-                r"^[^\"\n]*",r"[ \r\n]*\"";
-                transform = (v,i) -> v[1] *"="* v[3],
-                ## log=true,
-                ), wdelim),
-        r"^[ \r\n]*>[ \r\n]*", 
-        # 7
-        r"^[^<]*"s,
-        r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
-        # 14
-        word, ## todo: lookback!!
-        r"^[ \r\n]*>";
-        transform = (v,i) -> Token(v[3]*" "*join(v[5],", "), intern(v[7]))
-        ),
-    seq(Token,
-        "<", wdelim,
-        # 3
-        word, wdelim, ## todo: lookback!!
-        # 5
-        alternate(
-            seq(String,
-                word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
-                r"^[^\"\n]*",r"^[ \r\n]*\"";
-                transform = (v,i) -> v[1] *"="* v[3],
-                ## log=true,
-                ), wdelim),
-        r"^[ \r\n]*/[ \r\n]*>", 
-        transform = (v,i) -> Token(v[3]*" "*join(v[5],", "), "")
-        )
-); 
+        word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
+        r"^[^\"\n]*",r"[ \r\n]*\"";
+        transform = (v,i) -> Token(v[1], intern(v[3])),
+        ## log=true,
+        ), wdelim)
+
+
 
 
 list_item = instance(
@@ -97,132 +66,259 @@ list_item = instance(
     (v,i) -> [Token(:list,intern(v))],
     r"^(?:[*]+|[#]+)")
 
-wiki_list = seq(
-    Line{Token,LineContent},
-    # :indent =>
-    alt(list_item),
-    # :tokens =>
-    rep(wikitext);
-    transform = (v,i) -> Line(v[1], v[2]))
-
-wiki_content = seq(
-    Line{Token,LineContent},
-    # :indent =>
-    instance(Vector{Token},
-             (v,i)-> [Token(:whitespace,intern(v))],
-             r"^:*"),
-    # :tokens =>
-    rep(wikitext);
-    transform = (v,i) -> Line(v[1], v[2])
-);
-
-wiki_lines = [ wiki_list, wiki_content ];
-template_inner = alternate(
-    alt(wiki_lines...), newline;
-    appendf=(l,nl,i) -> [ Line(
-        l.indent,
-        vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
-
-inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
-
-function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. *]*")
-    seq(
-        Template{Token,LineContent},
-        "{{",
-        ( x === nothing ? template_inner :
-          x ),
-        rep(
-            seq(Pair{String, Paragraph{Token,LineContent}},
-                opt(newline),
-                "|",
-                opt(key_parser,"="; default="", transform_seq=1),
-                template_inner;
-                ## todo: in parser have default option to intern string during building instance
-                transform = (v,i) -> intern(v[3]) => v[4])),
-        opt(newline),
-        "}}"; 
-        transform=(v,i) -> Template((v[2]),v[3]))
-end
-
-
-
-wiki_freelink = seq(
-    "[[",
-    alt(
-        seq(Token,
-            r"^([^][]*)\|",
-            template_inner;
-            transform =  (v,i) -> Token(Symbol(v[1][1]),
-                                        intern(string(v[2])))), # ??? a link title is a tokenstring..., a tokenpair?
-        instance(Token, (v,i) -> Token("wiktionary.de", intern(v)),
-                 r"^[^][]*")
-    ),
-    "]]"; transform=2);
-push!(wikitext.els,wiki_freelink);
+# URL_re = raw"(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
 
 wiki_external_link =
-    seq(Token,
-        "[",
-        :target => r"[^][|#]*",
-        :section => opt("#", r"[^][|#]*"; default="", transform_seq = 2),
-        :title => opt("|", r"[^][|#]*"; default="", transform_seq = 2),
-        "]",
-        transform= (v,i) -> Token(v[2].second*v[3].second, intern(v[4].second))
-        );
-push!(wikitext.els,wiki_external_link);
+    instance(Token,
+             (v,i) -> Token(:link,intern(v[1])),
+             r"^\[((?:https?|ftp)[^][]+)\]"
+             );
 
 
-push!(wikitext.els,wiki_template());
+export substnothing
+substnothing(default, x) =
+    x === nothing ? default : x
 
-import ParserAlchemy.Tokens: parentheses
-function parenthesisP(name::Symbol)
-    open,close = parentheses[name]
-    seq(TokenPair{Symbol, Vector{LineContent}},
-        open, rep(wikitext), close;
-        transform=(v,i) -> TokenPair(name,v[2]))
-end
-function parenthesisP(open::String, close=open)
-    seq(TokenPair{String, Vector{LineContent}},
-        open, rep(wikitext), close;
-        transform=(v,i) -> TokenPair(name,v[2]))
+export WikiLink
+struct WikiLink <: AbstractToken
+    namespace_page::Token
+    anchor::String
+    label::String
+    function WikiLink(namespace, page, anchor, label, addlabel="")
+        new(Token(namespace, page), anchor, label * addlabel)
+    end
 end
 
-push!(wikitext.els, parenthesisP(:paren))
-push!(wikitext.els, parenthesisP(:bracket))
-push!(wikitext.els, parenthesisP(:curly))
-push!(wikitext.els, parenthesisP(:angle))
-# push!(wikitext.els, parenthesisP("\""))
-# push!(wikitext.els, parenthesisP("'"))
-# push!(wikitext.els, parenthesisP("„","“"))
-# push!(wikitext.els, parenthesisP("''"))
-# push!(wikitext.els, parenthesisP("'''"))
-for p in default_tokens
-    push!(wikitext.els, p)
+import ParserAlchemy.Tokens: Lines
+Lines(t::WikiLink, prefix=Token[]) = [ Line([prefix...,t.namespace_page,Token(Symbol("#"),t.anchor)],
+                                            Token[Token(:literal,t.label)]) ]
+
+Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
+    print(io, "[[", name(x.namespace_page) == "" ? "" : value(x.namespace) * ":",
+          x.page,
+          x.anchor == "" ? "" : "#" * x.anchor,
+          x.label == "" ? "" : "|" * x.label,
+          "]]")
+
+Base.show(io::IO, x::WikiLink) =
+          printstyled(io, x.label=="" ? value(x.namespace_page) : x.label; bold=true,
+                      color=36)
+
+export @substringorempty
+macro substringorempty(x,range)
+    :( $(esc(x)) === nothing ? "" : $(esc(x))[$(esc(range))] )
 end
-push!(wikitext.els, instance(Token, parser(r"[-+*/%&!=]"), :operator))
-push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
 
-heading(n) = seq(
-    Line{Token, LineContent},
-    Regex("^={$n,$n} *"),
-    tok(r"[^\n]*",rep(wikitext)),
-    Regex("^ *={$n,$n} *");
-    combine=true, 
-    transform = (v,i) -> Line{Token, LineContent}([ Token(:headline,intern(string(n))) ] , v[2]))
-
-textblock = alternate(
-    vcat([ heading(level) for level in reverse(1:6) ], wiki_lines),
-    emptyline; 
-    appendf=(v,nl,i) -> begin
-    push!(v.tokens, Token(:delimiter, intern(nl))); [ v ];
-    end)
-
-"""
-parse flat sections
-"""
-wikitextParser = textblock
+# Signs of Narcissism response
+# 1. feeling unwanted, hated, despised
+#    feeling odd when people treat you with respect
+# 2. exaggerated startle response
+# 3. fearful, nervous, worried for minor (everyday) decisions 
+# 4. fearful, nervous, worried for mistakes
+# 5. 
+# 6. Self-Talk: You deserve being mistreated (you are bad or evil: gas-lighting)
+# 7. You want to tell good news to other people than the narcissist
+# 8. envy of other couples
+wiki_link(;namespace = "wikt:de") =
+    instance(
+        WikiLink,
+        (v,i) -> WikiLink(substnothing(namespace,v[1]),
+                          (substnothing.("",v[2:end]))...),
+        r"^\[\[(?:([^][\|#]*):)?([^][\|#:]*)(?:#([^][\|#]+))?(?:\|([^][]+))?\]\]([[:alpha:]]+)?"
+    )
 
 
+wiki_parentheses = Dict{Any,Any}(
+    :paren=>("(", ")"),
+    :bracket=>("[", "]"),
+    :curly=>("{", "}"),
+    :angle=>("<", ">"),
+    :htmlcomment=> let xmlnl=regex_string(wdelim)
+    (Regex("^"*xmlnl*"<"*xmlnl*"!--"*xmlnl),Regex(xmlnl*"--"*xmlnl*">"*xmlnl))
+    end,
+    :italics=>("''","''"),
+    :bold=>("'''","'''"),
+    :bolditalics=>("''''","''''")
+)
+
+import ParserAlchemy.Tokens: regex_tempered_greedy
+import ParserAlchemy.Tokens: regex_tempered_greedy, enum_label, quotes
+
+function wikitext(;namespace = "wikt:de")
+    wikitext=alt(
+        LineContent,
+        bracket_number, ## todo: make a line type? see ordo [5]a-c
+        bracket_reference,
+        
+        seq(Node,
+            "[ \r\n]*<[ \r\n]*",
+            # 3
+            word, wdelim, ## todo: lookback!!
+            # 5
+            attributes,
+            r"^[ \r\n]*/[ \r\n]*>[ \r\n]*", 
+            transform = (v,i) -> Node(intern(v[3]),v[5], [])
+            )
+    )
+    wikilink = wiki_link(;namespace = namespace)    
+
+    wiki_list = seq(
+        Line{Token,LineContent},
+        # :indent =>
+        alt(list_item),
+        # :tokens =>
+        rep(wikitext);
+        transform = (v,i) -> Line(v[1], v[2]))
+
+    wiki_content = seq(
+        Line{Token,LineContent},
+        # :indent =>
+        instance(Vector{Token},
+                 (v,i)-> [Token(:whitespace," "^length(v))],
+                 r"^:*"),
+        # :tokens =>
+        rep(wikitext);
+        transform = (v,i) -> Line(v[1], v[2])
+    );
+
+    function parenthesisTempered(name::Symbol)
+        open,close = wiki_parentheses[name]
+        inner=rep(wikitext)
+        instance(TokenPair{Symbol, Vector{LineContent}},
+                 (v,i) -> TokenPair(name, tokenize(inner, v[1])),
+                 regex_tempered_greedy(open,close))
+    end
+
+    function parenthesisP(name::Symbol)
+        open,close = wiki_parentheses[name]
+        seq(TokenPair{Symbol, Vector{LineContent}},
+            open, rep(wikitext), close;
+            transform=(v,i) -> TokenPair(name,v[2]))
+    end
+    function parenthesisP(open::String, close=open)
+        seq(TokenPair{String, Vector{LineContent}},
+            open, rep(wikitext), close;
+            transform=(v,i) -> TokenPair(name,v[2]))
+    end
+    wiki_lines = [ wiki_list, wiki_content ];
+    template_inner = alternate(
+        alt(wiki_lines...), newline;
+        appendf=(l,nl,i) -> [ Line(
+            l.indent,
+            vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
+
+    inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
+
+    function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. *]*")
+        seq(
+            Template{Token,LineContent},
+            "{{",
+            ( x === nothing ? template_inner :
+              x ),
+            rep(
+                seq(Pair{String, Paragraph{Token,LineContent}},
+                    opt(newline),
+                    "|",
+                    opt(key_parser,"="; default="", transform_seq=1),
+                    template_inner;
+                    ## todo: in parser have default option to intern string during building instance
+                    transform = (v,i) -> intern(v[3]) => v[4])),
+            opt(newline),
+            "}}"; 
+            transform=(v,i) -> Template((v[2]),v[3]))
+    end
+
+    heading(n) = seq(
+        Line{Token, LineContent},
+        Regex("^={$n,$n} *"),
+        tok(r"[^\n]*",rep(wikitext)),
+        Regex("^ *={$n,$n} *");
+        combine=true, 
+        transform = (v,i) -> Line{Token, LineContent}([ Token(:headline,intern(string(n))) ] , v[2]))
+
+    push!(wikitext.els,
+          seq(Node,
+              r"^[ \r\n]*<", wdelim,
+              # 3
+              word, wdelim, ## todo: lookback!!
+              # 5
+              attributes,
+              r"^[ \r\n]*>[ \r\n]*", 
+              # 7 ## todo: recursive html parser
+              tok(r"^[^<]*"s, rep(wiki_content)),
+              r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
+              # 14
+              word, ## todo: lookback!!
+              r"^[ \r\n]*>[ \r\n]*";
+              transform = (v,i) -> Node(Symbol(intern(v[3])),
+                                        v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
+              ))
+
+    # push!(wikitext.els,
+    #       seq(Node,
+    #           "[ \r\n]*<[ \r\n]*",
+    #           # 3
+    #           word, wdelim, ## todo: lookback!!
+    #           # 5
+    #           attributes,
+    #           r"^[ \r\n]*>[ \r\n]*", 
+    #           # 7 ## todo: recursive html parser
+    #           tok(r"^[^<]*"s, rep(wiki_content)),
+    #           r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
+    #           # 14
+    #           word, ## todo: lookback!!
+    #           r"^[ \r\n]*>[ \r\n]*";
+    #           transform = (v,i) -> Node(Symbol(intern(v[3])),
+    #                                     v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
+    #           ))
+
+
+    push!(wikitext.els,wikilink);
+
+    push!(wikitext.els,instance(Token, (v,i) -> Token(:ellipsis,v),
+                                Regex("^"*regex_string("[…]"))))
+    push!(wikitext.els,wiki_external_link);
+
+
+    push!(wikitext.els,wiki_template());
+
+    push!(wikitext.els, parenthesisTempered(:htmlcomment))
+
+    push!(wikitext.els, parenthesisTempered(:paren))
+    push!(wikitext.els, parenthesisTempered(:bracket))
+    push!(wikitext.els, parenthesisTempered(:curly))
+    push!(wikitext.els, parenthesisTempered(:angle))
+    # push!(wikitext.els, parenthesisP("\""))
+    # push!(wikitext.els, parenthesisP("'"))
+    # push!(wikitext.els, parenthesisP("„","“"))
+    push!(wikitext.els, parenthesisTempered(:bolditalics))
+    push!(wikitext.els, parenthesisTempered(:bold))
+    push!(wikitext.els, parenthesisTempered(:italics))
+    # push!(wikitext.els, parenthesisP("'''"))
+
+    for p in [
+        instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
+        instance(Token, parser(word), :literal),
+        instance(Token, parser(quotes), :quote),
+        instance(Token, parser(delimiter), :delimiter)
+    ]
+        push!(wikitext.els, p)
+    end
+
+    push!(wikitext.els, instance(Token, parser(r"[-+*/%&!=]"), :operator))
+    push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
+
+    function append_textblock_token(v,nl,i)
+        push!(v.tokens, Token(:delimiter, intern(nl)))
+        [ v ]
+    end
+    textblock = alternate(
+        vcat([ heading(level) for level in reverse(1:6) ], wiki_lines),
+        emptyline; 
+        appendf=append_textblock_token)
+
+    wikitextParser = textblock
+end
 
 # inner_template_names = [
 #     "erweitern",
@@ -389,7 +485,7 @@ wiktionary_defs =
     rep(seq(
         NamedTuple,
         :prefix => rep(is_line()),
-        :word => seq(is_heading(x -> isequal(x.value,"2")),        
+        :word => seq(is_heading(x -> isequal(x.value,"2")),
                      rep(is_line())),
         :defs => rep(seq(is_heading(x -> isequal(x.value,"3")),
                          greedy(wiktionary_de_content...; alt=[:lines => is_line() ]))
@@ -406,11 +502,12 @@ number_line = seq(Pair{String,Vector{LineContent}},
 
 
 export wiki_meaning
-function wiki_meaning(v)
+function wiki_meaning(v;namespace = "wikt:de")
     L = Line{Token,LineContent}
     fields = [ x.second[1] for x in wiktionary_de_content ]
     base=(
-        word = Token("wiktionary.de", intern(trimstring(filter(t-> t isa Token,v.word[1].tokens)))),
+        word = Token(namespace, intern(trimstring(
+            join(string.(filter(t-> t isa Token,v.word[1].tokens)))))),
         language = v.word[1].tokens[3],
         ## todo: parse
     )
@@ -458,7 +555,7 @@ function wiki_meaning(v)
               for (m,val) in filter(k -> k.first!="?",pairs(meaning_data))
               ]
         val = get(meaning_data,"?",Dict())
-        ( (word_type=string(filter(isinformative,wt[1].tokens)), base...,           
+        ( (word_type=Token(:word_type,join(string.(filter(isinformative,wt[1].tokens)))), base...,           
            ( getval(val,p)
              for p in fields)...
            ),
@@ -485,31 +582,6 @@ function promote_missing(x)
 end
 
 export wikichunks
-## import ProgressMeter
-function wikichunks(inbox, output; prog=nothing, wait_onwarn = false, log = false, errorfile=nothing)
-    val = take!(inbox);
-    ## prog !== nothing && ProgressMeter.next!(prog; showvalues=[(:parsing, val.title)])
 
-    ntext = try
-        r=tokenize(wikitextParser, val.revision.text; errorfile=errorfile)
-        r === nothing ? nothing : tokenize(wiktionary_defs,r, delta=3)
-    catch e
-        if wait_onwarn ##&& i < lastindex(val.revision.text)
-            print("inspect and press <ENTER>")
-            readline()
-        end
-        rethrow(e)
-    end        
-    if ntext !== nothing
-        for v in ntext
-            for (w, ms) = wiki_meaning(v)
-                put!(output,("word", w))
-                for m in ms
-                    put!(output, ("meaning", m))
-                end
-            end
-        end
-    end
-end
 
 end # module
