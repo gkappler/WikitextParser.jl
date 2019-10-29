@@ -89,8 +89,8 @@ struct WikiLink <: AbstractToken
     end
 end
 
-import ParserAlchemy.Tokens: Lines
-Lines(t::WikiLink, prefix=Token[]) = [ Line([prefix...,t.namespace_page,Token(Symbol("#"),t.anchor)],
+import ParserAlchemy.Tokens: reline
+reline(t::WikiLink, prefix=Token[]) = [ Line([prefix...,t.namespace_page,Token(Symbol("#"),t.anchor)],
                                             Token[Token(:literal,t.label)]) ]
 
 Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
@@ -109,16 +109,6 @@ macro substringorempty(x,range)
     :( $(esc(x)) === nothing ? "" : $(esc(x))[$(esc(range))] )
 end
 
-# Signs of Narcissism response
-# 1. feeling unwanted, hated, despised
-#    feeling odd when people treat you with respect
-# 2. exaggerated startle response
-# 3. fearful, nervous, worried for minor (everyday) decisions 
-# 4. fearful, nervous, worried for mistakes
-# 5. 
-# 6. Self-Talk: You deserve being mistreated (you are bad or evil: gas-lighting)
-# 7. You want to tell good news to other people than the narcissist
-# 8. envy of other couples
 wiki_link(;namespace = "wikt:de") =
     instance(
         WikiLink,
