@@ -85,7 +85,7 @@ struct WikiLink <: AbstractToken
     anchor::String
     label::String
     function WikiLink(namespace, page, anchor, label, addlabel="")
-        new(Token(namespace, page), anchor, label * addlabel)
+        new(Token(namespace, page), anchor, (label=="" ? page : label) * addlabel)
     end
 end
 
