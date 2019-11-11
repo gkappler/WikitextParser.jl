@@ -17,7 +17,7 @@ import TextParse: Numeric
 int_range = seq(
     Vector{Int},
     # 1           # 2       # 3
-    Numeric(Int), r" *- *", Numeric(Int);
+    Numeric(Int), r" *(?:–|-) *", Numeric(Int); ## '–' != '-'
     # use julia `:` syntax to collect UnitRange 
     transform=(v,i)-> collect(v[1]:v[3]))
 
@@ -27,7 +27,8 @@ expand_numbers = seq(
         alt(instance(Vector{String},(v,i)->["$x" for x in v], int_range),
             instance(Vector{String},(v,i)->[v], r"[0-9]+[[:alpha:]]*")),
         ## regex: allow whitespace
-        r" *[,/] *";
+        r"^ *[,/] *";
+        
     ), "]";
     transform=(v,i) -> vcat(v[2]...))
 

@@ -32,9 +32,11 @@ import WikitextParser: wikitext, wikitextParser
 
 
 import WikitextParser: expand_numbers
-@test tokenize(expand_numbers,"[1]") == ["1"]
-@test tokenize(expand_numbers,"[1-3]") == ["1","2","3"]
-@test tokenize(expand_numbers,"[1-3,10]") == ["1","2","3","10"]
+@testset "number references" begin
+    @test tokenize(expand_numbers,"[1]") == ["1"]
+    @test tokenize(expand_numbers,"[1-3]") == ["1","2","3"]
+    @test tokenize(expand_numbers,"[1-3,10]") == ["1","2","3","10"]
+end
 
 tokenize(wikitext,
          "<
