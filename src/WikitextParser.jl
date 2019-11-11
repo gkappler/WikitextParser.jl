@@ -147,7 +147,7 @@ function wikitext(;namespace = "wikt:de")
             word, wdelim, ## todo: lookback!!
             # 5
             attributes,
-            r"^[ \r\n]*/[ \r\n]*>[ \r\n]*", 
+            r"^[ \r\n]*/[ \r\n]*>", 
             transform = (v,i) -> Node(intern(v[3]),v[5], [])
             )
     )
@@ -240,7 +240,7 @@ function wikitext(;namespace = "wikt:de")
               r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
               # 14
               word, ## todo: lookback!!
-              r"^[ \r\n]*>[ \r\n]*";
+              r"^[ \r\n]*>";
               transform = (v,i) -> Node(Symbol(intern(v[3])),
                                         v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
               ))
