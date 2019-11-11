@@ -4,7 +4,7 @@ using InternedStrings
 
 using ParserAlchemy
 using ParserAlchemy.Tokens
-import ParserAlchemy: inline, splitter, newline, whitespace, rep_delim_par, word, delimiter, indentation
+import ParserAlchemy: inline, splitter, newline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
 import ParserAlchemy.Tokens: Token, Node
 import ParserAlchemy.Tokens: Token, Template, TokenPair, Line, LineContent, Paragraph
@@ -90,9 +90,6 @@ struct WikiLink <: AbstractToken
     end
 end
 
-import ParserAlchemy.Tokens: reline
-reline(t::WikiLink, prefix=Token[]) = [ Line([prefix...,t.namespace_page,Token(Symbol("#"),t.anchor)],
-                                            Token[Token(:literal,t.label)]) ]
 
 Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
     print(io, "[[", name(x.namespace_page) == "" ? "" : value(x.namespace) * ":",
@@ -165,7 +162,7 @@ function wikitext(;namespace = "wikt:de")
         Line{Token,LineContent},
         # :indent =>
         instance(Vector{Token},
-                 (v,i)-> [Token(:whitespace," "^length(v))],
+                 (v,i)-> v=="" ? Token[] : Token[Token(:whitespace," "^length(v))],
                  r"^:*"),
         # :tokens =>
         rep(wikitext);
@@ -195,7 +192,7 @@ function wikitext(;namespace = "wikt:de")
     template_inner = alternate(
         alt(wiki_lines...), newline;
         appendf=(l,nl,i) -> [ Line(
-            l.indent,
+            l.prefix,
             vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
@@ -510,8 +507,7 @@ function wiki_meaning(v;namespace = "wikt:de")
             end
             data = get!(() -> Line{Token,LineContent}[], meandata, k)
             ## typeof(data)
-            push!(data, Line([Token(:whitespace,":"), Token(:meaning, intern(num)),
-                              Token(:whitespace," ")], val))
+            push!(data, Line(Token[], val))
         end
         for (k,v) in wt[2]
             ## @show k
