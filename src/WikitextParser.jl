@@ -273,7 +273,7 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els, parenthesisTempered(:htmlcomment))
 
-    push!(wikitext.els, parenthesisTempered(:paren))
+    push!(wikitext.els, parenthesisP(:paren))
     push!(wikitext.els, parenthesisTempered(:bracket))
     push!(wikitext.els, parenthesisTempered(:curly))
     push!(wikitext.els, parenthesisTempered(:angle))
