@@ -132,6 +132,7 @@ wiki_parentheses = Dict{Any,Any}(
 import ParserAlchemy.Tokens: regex_tempered_greedy
 import ParserAlchemy.Tokens: regex_tempered_greedy, enum_label, quotes
 
+export wikitext
 function wikitext(;namespace = "wikt:de")
     wikitext=alt(
         LineContent,
