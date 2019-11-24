@@ -56,9 +56,9 @@ wdelim = r"^[ \t\r\n]*"
 
 attributes = alternate(
     seq(Token,
-        word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
+        opt(whitespace), word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
         r"^[^\"\n]*",r"[ \r\n]*\"";
-        transform = (v,i) -> Token(v[1], intern(v[3])),
+        transform = (v,i) -> Token(v[2], intern(v[4])),
         ## log=true,
         ), wdelim)
 
