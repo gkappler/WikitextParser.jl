@@ -4,10 +4,10 @@ using InternedStrings
 
 using ParserAlchemy
 using ParserAlchemy.Tokens
-import ParserAlchemy: inline, splitter, newline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
+import ParserAlchemy: inline, splitter, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
-import ParserAlchemy.Tokens: Token, Node
-import ParserAlchemy.Tokens: Token, Template, TokenPair, Line, LineContent, Paragraph
+import ParserAlchemy.Tokens: NamedString, Token
+import ParserAlchemy.Tokens: Node, Template, TokenPair, Line, LineContent, Paragraph
 import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_heading
 
 
@@ -139,8 +139,59 @@ wiki_parentheses = Dict{Any,Any}(
     :bolditalics=>("''''","''''")
 )
 
-import ParserAlchemy.Tokens: regex_tempered_greedy
-import ParserAlchemy.Tokens: regex_tempered_greedy, enum_label, quotes
+import ParserAlchemy: regex_tempered_greedy
+import ParserAlchemy.Tokens: enum_label, quotes
+
+function table_cell_parser(node="td",
+                           inner=instance(Vector{String},(v,i)->String[v],FullText()))
+    seq(Node{eltype(result_type(inner))},
+        r" *",
+        opt( seq( attributes,
+                  ## ignore dummy format, e.g. ''formatting''
+                  r"^[^\|\n!]*\|(?![\|])"; transform=1)),
+        regex_neg_lookahead(r"\|\||!!",r"[^\n]");
+        transform=(v,i) -> Node(node, v[2],
+            tokenize(inner,v[3])))
+end
+
+function table_cell_parsers(inner=instance(Vector{String},(v,i)->String[v],FullText()))
+    seq(Vector{Node{eltype(result_type(inner))}},
+        alt(seq("!",table_cell_parser("th",inner), transform=2),
+            seq(r"\|(?![-}])",table_cell_parser("td",inner), transform=2)),
+        rep(
+            alt(seq("!!",table_cell_parser("th",inner), transform=2),
+                seq("||",table_cell_parser("td",inner), transform=2))),
+    transform=(v,i)->pushfirst!(v[2],v[1]))
+end
+
+function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText()))
+    ## N = Node{Node{eltype(result_type(inner))}}
+    N = Node
+    seq(Node{N},
+        "{|", tok(inline,attributes), newline,
+        # 4
+        opt(seq("|+", tok(inline,inner), newline; transform=2)),
+        # 5 
+        alternate(table_cell_parsers(inner),newline),
+        rep(seq(N,
+                "|-", tok(inline,attributes), newline,
+                alternate(table_cell_parsers(inner),newline);
+                transform=(v,i) -> Node("tr", v[2], vcat(v[4]...)))),
+        rep(whitenewline),
+        "|}",opt(r" *\r?\n")
+        ; partial=true,
+        transform=(v,i) -> begin
+        if !isempty(v[5])
+        pushfirst!(v[6],
+              Node("tr", [], vcat(v[5]...)))
+        end
+        if !isempty(v[4])
+        pushfirst!(v[6],
+              Node("caption", [], vcat(v[4]...)))
+        end
+        Node("table",v[2], v[6])
+        end)
+end
 
 export wikitext
 function wikitext(;namespace = "wikt:de")
@@ -208,7 +259,26 @@ function wikitext(;namespace = "wikt:de")
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
 
-    function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. *]*")
+    function wiki_table(x=r"[^}{\|]+")
+        seq(
+            TokenPair,
+            "{|",
+            ##rows
+            alternate(    
+                rep( alt(
+                    opt(newline),
+                    "|",
+                    opt(key_parser,"="; default="", transform_seq=1),
+                    template_inner;
+                    ## todo: in parser have default option to intern string during building instance
+                    transform = (v,i) -> intern(v[3]) => v[4]),
+                     r"^ *\|- *"*newline),
+                opt(newline),
+                "|}"; 
+                transform=(v,i) -> Template((v[2]),v[3])))
+    end
+
+    function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*")
         seq(
             Template{NamedString,LineContent},
             "{{",
