@@ -14,6 +14,9 @@ import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_headi
 import TextParse
 import TextParse: Numeric
 
+import BasePiracy
+import BasePiracy: construct
+
 int_range = seq(
     Vector{Int},
     # 1           # 2       # 3
@@ -85,9 +88,16 @@ struct WikiLink <: AbstractToken
     namespace_page::Token
     anchor::String
     label::String
-    function WikiLink(namespace, page, anchor, label, addlabel="")
-        new(Token(namespace, page), anchor, (label=="" ? page : label) * addlabel)
+    function WikiLink(namespace::AbstractString, page::AbstractString, anchor::AbstractString, label::AbstractString, addlabel="")
+        new(Token(intern(namespace), intern(page)), intern(anchor),
+            intern((label=="" ? page : label) * addlabel))
     end
+    function WikiLink(namespace_page::Token, anchor::String, label::String)
+        new(namespace_page, anchor, label)
+    end
+end
+function BasePiracy.construct(::Type{WikiLink}; namespace_page, anchor, label)
+    WikiLink(namespace_page, anchor, label)
 end
 
 
