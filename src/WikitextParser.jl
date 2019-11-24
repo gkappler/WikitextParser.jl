@@ -66,8 +66,8 @@ attributes = alternate(
 
 
 list_item = instance(
-    Vector{Token},
-    (v,i) -> [Token(:list,intern(v[1]))],
+    Vector{NamedString},
+    (v,i) -> [NamedString(:list,intern(v[1]))],
     r"^([*]+|[#]+) *")
 
 # URL_re = raw"(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
@@ -162,7 +162,7 @@ function wikitext(;namespace = "wikt:de")
     wikilink = wiki_link(;namespace = namespace)    
 
     wiki_list = seq(
-        Line{Token,LineContent},
+        Line{NamedString,LineContent},
         # :indent =>
         alt(list_item),
         # :tokens =>
@@ -170,10 +170,10 @@ function wikitext(;namespace = "wikt:de")
         transform = (v,i) -> Line(v[1], v[2]))
 
     wiki_content = seq(
-        Line{Token,LineContent},
+        Line{NamedString,LineContent},
         # :indent =>
-        instance(Vector{Token},
-                 (v,i)-> v=="" ? Token[] : Token[Token(:whitespace," "^length(v))],
+        instance(Vector{NamedString},
+                 (v,i)-> v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))],
                  r"^:*"),
         # :tokens =>
         rep(wikitext);
@@ -202,7 +202,7 @@ function wikitext(;namespace = "wikt:de")
     wiki_lines = [ wiki_list, wiki_content ];
     template_inner = alternate(
         alt(wiki_lines...), newline;
-        appendf=(l,nl,i) -> [ Line(
+        appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
             l.prefix,
             vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
 
@@ -210,12 +210,12 @@ function wikitext(;namespace = "wikt:de")
 
     function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. *]*")
         seq(
-            Template{Token,LineContent},
+            Template{NamedString,LineContent},
             "{{",
             ( x === nothing ? template_inner :
               x ),
             rep(
-                seq(Pair{String, Paragraph{Token,LineContent}},
+                seq(Pair{String, Paragraph{NamedString,LineContent}},
                     opt(newline),
                     "|",
                     opt(key_parser,"="; default="", transform_seq=1),
@@ -228,12 +228,12 @@ function wikitext(;namespace = "wikt:de")
     end
 
     heading(n) = seq(
-        Line{Token, LineContent},
+        Line{NamedString, LineContent},
         Regex("^={$n,$n} *"),
         tok(r"[^\n]*",rep(wikitext)),
         Regex("^ *={$n,$n} *");
         combine=true, 
-        transform = (v,i) -> Line{Token, LineContent}([ Token(:headline,intern(string(n))) ] , v[2]))
+        transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
 
     push!(wikitext.els,
           seq(Node,
@@ -503,7 +503,7 @@ number_line = seq(Pair{String,Vector{LineContent}},
 
 export wiki_meaning
 function wiki_meaning(v;namespace = "wikt:de")
-    L = Line{Token,LineContent}
+    L = Line{NamedString,LineContent}
     fields = [ x.second[1] for x in wiktionary_de_content ]
     base=(
         word = Token(namespace, intern(trimstring(
@@ -515,14 +515,13 @@ function wiki_meaning(v;namespace = "wikt:de")
         meaning_data = Dict{String,Dict{Symbol,Vector{L}}}()
         function pushit(num,k,val)
             meandata = get!(meaning_data, num) do
-                Dict{Symbol,Vector{Line{Token,LineContent}}}()
+                Dict{Symbol,Vector{Line{NamedString,LineContent}}}()
             end
-            data = get!(() -> Line{Token,LineContent}[], meandata, k)
+            data = get!(() -> Line{NamedString,LineContent}[], meandata, k)
             ## typeof(data)
-            push!(data, Line(Token[], val))
+            push!(data, Line(NamedString[], val))
         end
         for (k,v) in wt[2]
-            ## @show k
             x = tokenize(
                 rep(is_line(Pair{String,Vector{LineContent}},
                             (l, i) -> let (r,i_) = tryparsenext(number_line, l.tokens)
