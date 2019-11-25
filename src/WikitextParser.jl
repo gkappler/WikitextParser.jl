@@ -179,7 +179,7 @@ function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText())
                 transform=(v,i) -> Node("tr", v[2], vcat(v[4]...)))),
         rep(whitenewline),
         "|}",opt(r" *\r?\n")
-        ; partial=true,
+        ; ## partial=true,
         transform=(v,i) -> begin
         if !isempty(v[5])
         pushfirst!(v[6],
@@ -201,13 +201,13 @@ function wikitext(;namespace = "wikt:de")
         bracket_reference,
         
         seq(Node,
-            "[ \r\n]*<[ \r\n]*",
-            # 3
+            "<",
+            # 2
             word, wdelim, ## todo: lookback!!
-            # 5
+            # 4
             attributes,
-            r"^[ \r\n]*/[ \r\n]*>", 
-            transform = (v,i) -> Node(intern(v[3]),v[5], [])
+            r"/>", 
+            transform = (v,i) -> Node(intern(v[2]),v[4], [])
             )
     )
     wikilink = wiki_link(;namespace = namespace)    
@@ -307,20 +307,22 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els,
           seq(Node,
-              r"^[ \r\n]*<", wdelim,
+              "<", wdelim,
               # 3
               word, wdelim, ## todo: lookback!!
               # 5
               attributes,
-              r"^[ \r\n]*>[ \r\n]*", 
+              ">", 
               # 7 ## todo: recursive html parser
-              tok(r"^[^<]*"s, rep(wiki_content)),
-              r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
+              tok(r"^[^<]*"s, template_inner),
+              "</",
               # 14
               word, ## todo: lookback!!
-              r"^[ \r\n]*>";
-              transform = (v,i) -> Node(Symbol(intern(v[3])),
-                                        v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
+              r">";
+              transform = (v,i) -> begin
+              Node(Symbol(intern(v[3])),
+                   v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
+              end
               ))
 
     # push!(wikitext.els,
@@ -442,7 +444,7 @@ function parse_bz2(f::Function,
             end
             cbs.character_data = function(h, txt)
                 if !ignored
-                    txt != "\n" && txt !="" && push!(text,txt)
+                    push!(text,txt)
                     ## text = 
                 end
             end            
@@ -481,7 +483,7 @@ function parse_bz2(f::Function,
                 if name in value || isempty(r[end])
                     ## @show name r[end]
                     pop!(r)
-                    text =  join(filter(x-> x!="",trim.(text)), "\n") #  * txt, r"^[ \t\n\r]*|[ \t\n\r]*$" => "")
+                    text =  trim(join(filter(x-> x!="",text))) #  * txt, r"^[ \t\n\r]*|[ \t\n\r]*$" => "")
                     (!isempty(r) && text !="") && push!(r[end].second, name => text)
                     text = []
                 elseif name in types
