@@ -542,7 +542,7 @@ function parse_overview(t::Template)
     images = Line{NamedString,LineContent}[]
     inflections = Token[]
     overview_parser = seq(Vector{String},
-                          alt(word, r"[[:digit:]]\. Person"),whitespace,word,whitespace,"Übersicht";
+                          word,whitespace,word,whitespace,"Übersicht";
                           transform=(v,i) -> String[intern(v[1]),intern(v[3])])
     language, wordtype = tokenize(overview_parser, t.template)
     args = Pair{String,Token}[]
@@ -560,16 +560,7 @@ function parse_overview(t::Template)
         elseif a.first in ["Genus"]
             push!(args, a.first => val)
         else
-            imp = tokenize(
-                r"^([^[:digit:]]+) *([[:digit:]]*)",
-                a.first)
-            if imp !== nothing
-                push!(inflections, Token(imp[1],string(val)))
-            else # if a.first in ["Genus"]
-                @warn "no key" t a
-                error(a.first)
-                push!(args, a)
-            end
+            push!(inflections, Token(a.first,string(val)))
         end
     end
     ( language = language,
