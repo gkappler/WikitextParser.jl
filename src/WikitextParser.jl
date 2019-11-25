@@ -670,11 +670,25 @@ function wiki_meaning(v;namespace = "wikt:de")
             end
         end
         ## @info "?" keys(meaning_data) first(values(meaning_data)) ## (;a=1,get(meaning_data,"?",[])...) get(meaning_data,"?",[])
+        common = get(()->Dict{Symbol,Vector{L}}(), meaning_data,"[*]")
+        for (m,val) in pairs(meaning_data)
+            if !in(m, ["?","[*]"])
+                for (f,v) in pairs(common)
+                    if haskey(val,f)
+                        append!(val[f],v)
+                    else
+                        val[f]=v
+                    end
+                end
+            end
+        end
         meanings = [ ( word=base.word, order=m,
-                ( getval(val,p)
-                  for p in fields)... )
-              for (m,val) in filter(k -> k.first!="?",pairs(meaning_data))
-              ]
+                       ( getval(val,p)
+                         for p in fields)... )
+                     for (m,val) in pairs(meaning_data)
+                     if !in(m, ["?","[*]"])
+                     ]
+        
         val = get(meaning_data,"?",Dict())
         ( merge(## word_type=Token(:word_type,join(string.(filter(isinformative,wt[1].tokens)))),
                 base,
