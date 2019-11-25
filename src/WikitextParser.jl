@@ -518,6 +518,71 @@ ignore_heading = (v, i) -> begin
     length(@show v) == 1 ? [] : v[2:end]
 end
 
+
+image_argument_parser = instance(
+    Vector{NamedString},
+    (v,i) -> [ NamedString("image", v[2]), NamedString("property", v[1]) ],
+    r"^(Bild[^[:digit:]]*)([[:digit:]]*)$")
+
+
+function prepend_prefix!(v::Vector{<:Line},y)    
+    for x in v
+        prepend!(x.prefix.prefix, y)
+        ## dump(x.tokens)
+        filter!(t -> !in(t,[ Token(:whitespace, "\n"),
+                             Token(:literal, "—") ]), x.tokens)
+        ## print(x)
+        ## sleep(1)        
+    end
+    filter!(t -> !isempty(t.tokens), v)
+end
+
+function parse_overview(t::Template)
+    images = Line{NamedString,LineContent}[]
+    inflections = Token[]
+    overview_parser = seq(Vector{String},
+                          word,whitespace,word,whitespace,"Übersicht";
+                          transform=(v,i) -> String[intern(v[1]),intern(v[3])])
+    language, wordtype = tokenize(overview_parser, t.template)
+    args = Pair{String,Token}[]
+    for (i,a) in enumerate(t.arguments)
+        # if !(length(a.second) == 2 && length(a.second[1].tokens)==2)
+        #     dump(a)
+        #     error(typeof(a))
+        # end
+        val = a.second[1].tokens[1]
+        imp = tokenize(image_argument_parser, a.first)
+        if imp !== nothing
+            append!(images, prepend_prefix!(a.second, imp))
+        elseif a.first==""
+            ## push!(args, "$i" => val)
+        elseif a.first in ["Genus"]
+            push!(args, a.first => val)
+        else
+            imp = tokenize(
+                r"^([^[:digit:]]+) *([[:digit:]]*)",
+                a.first)
+            if imp !== nothing
+                push!(inflections, Token(imp[1],string(val)))
+            else # if a.first in ["Genus"]
+                @warn "no key" t a
+                error(a.first)
+                push!(args, a)
+            end
+        end
+    end
+    ( language = language,
+      wordtype = wordtype,
+      inflections = inflections,
+      images = images,
+      wikitext = t)
+end
+
+
+      
+function parse_overview(v::Vector{<:Line})
+    parse_overview(isempty(v) ? Template("NoLanguage NoWordType Übersicht") : v[1].tokens[1])
+end
 wiktionary_de_content=[
                 is_template_line("Übersetzungen", ignore, Missing) => (:translations, is_line()),
                 is_template_line(t -> match(r"Übersicht",t.template)!==nothing) => (:overview, missing),
@@ -576,11 +641,11 @@ number_line = seq(Pair{String,Vector{LineContent}},
 export wiki_meaning
 function wiki_meaning(v;namespace = "wikt:de")
     L = Line{NamedString,LineContent}
+    getval(val,p) =  p => ( ( haskey(val,p) && val[p]!==missing ) ? val[p] : L[] )
     fields = [ x.second[1] for x in wiktionary_de_content ]
     base=(
         word = Token(namespace, intern(trimstring(
             join(string.(filter(t-> t isa Token,v.word[1].tokens)))))),
-        language = v.word[1].tokens[3],
         ## todo: parse
     )
     function inner(wt)
@@ -618,18 +683,20 @@ function wiki_meaning(v;namespace = "wikt:de")
             end
         end
         ## @info "?" keys(meaning_data) first(values(meaning_data)) ## (;a=1,get(meaning_data,"?",[])...) get(meaning_data,"?",[])
-        getval(val,p) =  p => ( ( haskey(val,p) && val[p]!==missing ) ? val[p] : L[] )
-        x = [ ( word=base.word, order=m,
+        meanings = [ ( word=base.word, order=m,
                 ( getval(val,p)
                   for p in fields)... )
               for (m,val) in filter(k -> k.first!="?",pairs(meaning_data))
               ]
         val = get(meaning_data,"?",Dict())
-        ( (word_type=Token(:word_type,join(string.(filter(isinformative,wt[1].tokens)))), base...,           
-           ( getval(val,p)
-             for p in fields)...
-           ),
-          x
+        ( merge(## word_type=Token(:word_type,join(string.(filter(isinformative,wt[1].tokens)))),
+                base,
+                parse_overview(getval(val,:overview).second),
+                (;( getval(val,p)
+                    for p in fields
+                    if p != :overview)...
+                 )),
+          meanings
           )
     end
     [ inner(wt) for  wt = v.defs ]
