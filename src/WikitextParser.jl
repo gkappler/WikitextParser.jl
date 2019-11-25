@@ -131,9 +131,7 @@ wiki_parentheses = Dict{Any,Any}(
     :bracket=>("[", "]"),
     :curly=>("{", "}"),
     :angle=>("<", ">"),
-    :htmlcomment=> let xmlnl=regex_string(wdelim)
-    (Regex("^"*xmlnl*"<"*xmlnl*"!--"*xmlnl),Regex(xmlnl*"--"*xmlnl*">"*xmlnl))
-    end,
+    :htmlcomment=> ("<!--","-->"),
     :italics=>("''","''"),
     :bold=>("'''","'''"),
     :bolditalics=>("''''","''''")
