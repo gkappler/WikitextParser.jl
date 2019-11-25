@@ -542,7 +542,7 @@ function parse_overview(t::Template)
     images = Line{NamedString,LineContent}[]
     inflections = Token[]
     overview_parser = seq(Vector{String},
-                          word,whitespace,word,whitespace,"Übersicht";
+                          alt(word, r"[[:digit:]] Person"),whitespace,word,whitespace,"Übersicht";
                           transform=(v,i) -> String[intern(v[1]),intern(v[3])])
     language, wordtype = tokenize(overview_parser, t.template)
     args = Pair{String,Token}[]
