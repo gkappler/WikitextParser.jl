@@ -282,7 +282,7 @@ function wikitext(;namespace = "wikt:de")
         seq(
             Template{NamedString,LineContent},
             "{{",
-            ( x === nothing ? template_inner :
+            ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep(wikitext)) :
               x ),
             rep(
                 seq(Pair{String, Paragraph{NamedString,LineContent}},
@@ -350,8 +350,9 @@ function wikitext(;namespace = "wikt:de")
                                 Regex("^"*regex_string("[…]"))))
     push!(wikitext.els,wiki_external_link);
 
+    push!(wikitext.els,wiki_template(nothing));
 
-    push!(wikitext.els,wiki_template());
+    push!(wikitext.els,table_parser(template_inner));
 
     push!(wikitext.els, parenthesisTempered(:htmlcomment))
 
