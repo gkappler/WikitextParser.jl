@@ -127,10 +127,7 @@ wiki_link(;namespace = "wikt:de") =
 
 
 wiki_parentheses = Dict{Any,Any}(
-    :paren=>("(", ")"),
-    :bracket=>("[", "]"),
-    :curly=>("{", "}"),
-    :angle=>("<", ">"),
+    pairs(ParserAlchemy.Tokens.parentheses)...,
     :htmlcomment=> ("<!--","-->"),
     :italics=>("''","''"),
     :bold=>("'''","'''"),
@@ -372,19 +369,22 @@ function wikitext(;namespace = "wikt:de")
         instance(Token, parser(footnote), :footnote),
         instance(Token, parser(quotes), :quote),
         instance(Token, parser(delimiter), :delimiter)
+        , instance(Token, r"^[\|\n]", :delimiter)
+        , instance(Token, r"^[][{}()<>]", :paren)
     ]
         push!(wikitext.els, p)
     end
 
     push!(wikitext.els, instance(Token, parser(r"[-+*/%&!=]"), :operator))
     push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
+push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
 
     function append_textblock_token(v,nl,i)
         push!(v.tokens, Token(:delimiter, intern(nl)))
         [ v ]
     end
     textblock = alternate(
-        vcat([ heading(level) for level in reverse(1:6) ], wiki_lines),
+        vcat([ heading(level) for level in reverse(1:6) ], wiki_lines(;until=Never())),
         emptyline; 
         appendf=append_textblock_token)
 
