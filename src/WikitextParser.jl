@@ -207,22 +207,22 @@ function wikitext(;namespace = "wikt:de")
     )
     wikilink = wiki_link(;namespace = namespace)    
 
-    wiki_list = seq(
+    wiki_list(;until) = seq(
         Line{NamedString,LineContent},
         # :indent =>
         alt(list_item),
         # :tokens =>
-        rep(wikitext);
+        rep_stop(wikitext, alt(newline,until));
         transform = (v,i) -> Line(v[1], v[2]))
 
-    wiki_content = seq(
+    wiki_content(;until) = seq(
         Line{NamedString,LineContent},
         # :indent =>
         instance(Vector{NamedString},
                  (v,i)-> v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))],
                  r"^:*"),
         # :tokens =>
-        rep(wikitext);
+        rep_stop(wikitext,alt(newline,until));
         transform = (v,i) -> Line(v[1], v[2])
     );
 
@@ -234,20 +234,18 @@ function wikitext(;namespace = "wikt:de")
                  regex_tempered_greedy(open,close))
     end
 
-    function parenthesisP(name::Symbol)
-        open,close = wiki_parentheses[name]
+    function parenthesisP(name::Symbol,open::String, close=open)
         seq(TokenPair{Symbol, Vector{LineContent}},
-            open, rep(wikitext), close;
+            open, rep_until(wikitext, close);
             transform=(v,i) -> TokenPair(name,v[2]))
     end
-    function parenthesisP(open::String, close=open)
-        seq(TokenPair{String, Vector{LineContent}},
-            open, rep(wikitext), close;
-            transform=(v,i) -> TokenPair(name,v[2]))
+    function parenthesisP(name::Symbol)
+        parenthesisP(name,wiki_parentheses[name]...)
     end
-    wiki_lines = [ wiki_list, wiki_content ];
+    
+    wiki_lines(;kw...) = [ wiki_list(;kw...), wiki_content(;kw...) ];
     template_inner = alternate(
-        alt(wiki_lines...), newline;
+        alt(wiki_lines(until=alt("|","}}"))...), newline;
         appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
             l.prefix,
             vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
@@ -277,18 +275,18 @@ function wikitext(;namespace = "wikt:de")
         seq(
             Template{NamedString,LineContent},
             "{{",
-            ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep(wikitext)) :
+            ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}}"))) :
               x ),
-            rep(
+            rep_until(
                 seq(Pair{String, Paragraph{NamedString,LineContent}},
                     opt(newline),
                     "|",
                     opt(key_parser,"="; default="", transform_seq=1),
-                    template_inner;
+                    template_inner,
+                    opt(newline);
                     ## todo: in parser have default option to intern string during building instance
-                    transform = (v,i) -> intern(v[3]) => v[4])),
-            opt(newline),
-            "}}"; 
+                    transform = (v,i) -> intern(v[3]) => v[4]),
+                "}}"); 
             transform=(v,i) -> Template((v[2]),v[3]))
     end
 
@@ -349,18 +347,18 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els,table_parser(template_inner));
 
-    push!(wikitext.els, parenthesisTempered(:htmlcomment))
+    push!(wikitext.els, parenthesisP(:htmlcomment))
 
     push!(wikitext.els, parenthesisP(:paren))
-    push!(wikitext.els, parenthesisTempered(:bracket))
-    push!(wikitext.els, parenthesisTempered(:curly))
-    push!(wikitext.els, parenthesisTempered(:angle))
-    # push!(wikitext.els, parenthesisP("\""))
-    # push!(wikitext.els, parenthesisP("'"))
-    # push!(wikitext.els, parenthesisP("„","“"))
+    push!(wikitext.els, parenthesisP(:bracket))
+    push!(wikitext.els, parenthesisP(:curly))
+    push!(wikitext.els, parenthesisP(:angle))
+    push!(wikitext.els, parenthesisP(:quote))
     push!(wikitext.els, parenthesisTempered(:bolditalics))
     push!(wikitext.els, parenthesisTempered(:bold))
     push!(wikitext.els, parenthesisTempered(:italics))
+    push!(wikitext.els, parenthesisP(:squote))
+    push!(wikitext.els, parenthesisP(:german_quote))
     # push!(wikitext.els, parenthesisP("'''"))
 
     for p in [
@@ -377,7 +375,6 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els, instance(Token, parser(r"[-+*/%&!=]"), :operator))
     push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
-push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
 
     function append_textblock_token(v,nl,i)
         push!(v.tokens, Token(:delimiter, intern(nl)))
