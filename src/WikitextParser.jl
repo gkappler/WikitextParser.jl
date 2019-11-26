@@ -349,7 +349,7 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els, parenthesisP(:htmlcomment))
 
-##    push!(wikitext.els, parenthesisP(:paren))
+    push!(wikitext.els, parenthesisP(:paren)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext.els, parenthesisP(:bracket))
 ##    push!(wikitext.els, parenthesisP(:curly))
 ##    push!(wikitext.els, parenthesisP(:angle))
@@ -631,7 +631,7 @@ function wiki_meaning(v;namespace = "wikt:de")
     fields = [ x.second[1] for x in wiktionary_de_content ]
     base=(
         word = Token(namespace, intern(trimstring(
-            join(string.(filter(t-> t isa Token,v.word[1].tokens)))))),
+            join(string.(filter(t-> t isa Token && variable(t)!=:paren,v.word[1].tokens)))))),
         ## todo: parse
     )
     function inner(wt)
