@@ -349,17 +349,17 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els, parenthesisP(:htmlcomment))
 
-    push!(wikitext.els, parenthesisP(:paren))
-    push!(wikitext.els, parenthesisP(:bracket))
-    push!(wikitext.els, parenthesisP(:curly))
-    push!(wikitext.els, parenthesisP(:angle))
-    push!(wikitext.els, parenthesisP(:quote))
+##    push!(wikitext.els, parenthesisP(:paren))
+##    push!(wikitext.els, parenthesisP(:bracket))
+##    push!(wikitext.els, parenthesisP(:curly))
+##    push!(wikitext.els, parenthesisP(:angle))
+##    push!(wikitext.els, parenthesisP(:quote))
     push!(wikitext.els, parenthesisTempered(:bolditalics))
     push!(wikitext.els, parenthesisTempered(:bold))
     push!(wikitext.els, parenthesisTempered(:italics))
-    push!(wikitext.els, parenthesisP(:squote))
-    push!(wikitext.els, parenthesisP(:german_quote))
-    # push!(wikitext.els, parenthesisP("'''"))
+##    push!(wikitext.els, parenthesisP(:squote))
+##    push!(wikitext.els, parenthesisP(:german_quote))
+##    push!(wikitext.els, parenthesisP("'''"))
 
     for p in [
         instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
@@ -369,12 +369,11 @@ function wikitext(;namespace = "wikt:de")
         instance(Token, parser(delimiter), :delimiter)
         , instance(Token, r"^[\|\n]", :delimiter)
         , instance(Token, r"^[][{}()<>]", :paren)
+        , instance(Token, parser(r"[-+*/%&!=]"), :operator)
+        , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
     ]
         push!(wikitext.els, p)
     end
-
-    push!(wikitext.els, instance(Token, parser(r"[-+*/%&!=]"), :operator))
-    push!(wikitext.els, instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown))
 
     function append_textblock_token(v,nl,i)
         push!(v.tokens, Token(:delimiter, intern(nl)))
