@@ -161,7 +161,7 @@ end
 
 function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText()))
     ## N = Node{Node{eltype(result_type(inner))}}
-    N = Node
+    N = Node{AbstractToken}
     seq(Node{N},
         "{|", tok(inline,attributes), newline,
         # 4
@@ -171,20 +171,20 @@ function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText())
         rep(seq(N,
                 "|-", tok(inline,attributes), newline,
                 alternate(table_cell_parsers(inner),newline);
-                transform=(v,i) -> Node("tr", v[2], vcat(v[4]...)))),
+                transform=(v,i) -> Node{AbstractToken}("tr", v[2], vcat(v[4]...)))),
         rep(whitenewline),
         "|}",opt(r" *\r?\n")
         ; ## partial=true,
         transform=(v,i) -> begin
         if !isempty(v[5])
         pushfirst!(v[6],
-              Node("tr", [], vcat(v[5]...)))
+              Node{AbstractToken}("tr", [], vcat(v[5]...)))
         end
         if !isempty(v[4])
         pushfirst!(v[6],
-              Node("caption", [], vcat(v[4]...)))
+              Node{AbstractToken}("caption", [], vcat(v[4]...)))
         end
-        Node("table",v[2], v[6])
+        Node{N}("table",v[2], v[6])
         end)
 end
 
@@ -195,14 +195,14 @@ function wikitext(;namespace = "wikt:de")
         bracket_number, ## todo: make a line type? see ordo [5]a-c
         bracket_reference,
         
-        seq(Node,
+        seq(Node{Line{NamedString,AbstractToken}},
             "<",
             # 2
             word, wdelim, ## todo: lookback!!
             # 4
             attributes,
             r"/>", 
-            transform = (v,i) -> Node(intern(v[2]),v[4], [])
+            transform = (v,i) -> Node(intern(v[2]),v[4], Line{NamedString,AbstractToken}[])
             )
     )
     wikilink = wiki_link(;namespace = namespace)    
@@ -299,7 +299,7 @@ function wikitext(;namespace = "wikt:de")
         transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
 
     push!(wikitext.els,
-          seq(Node,
+          seq(Node{Line{NamedString,AbstractToken}},
               "<", wdelim,
               # 3
               word, wdelim, ## todo: lookback!!
@@ -561,7 +561,7 @@ function parse_overview(t::Template)
       wordtype = wordtype,
       inflections = inflections,
       images = images,
-      wikitext = t)
+      wikitext = [ Line(LineContent[t]) ] )
 end
 
 
@@ -717,8 +717,6 @@ function promote_missing(x)
     T=NamedTuple{tuple(keys(nt)...), Tuple{values(nt)...}}
     [ convert(T, i) for i in x ]
 end
-
-export wikichunks
 
 
 end # module
