@@ -193,11 +193,29 @@ TemplateParameter = TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineC
 
 export wikitext
 function wikitext(;namespace = "wikt:de")
+    simple_tokens = [
+        ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
+        instance(Token, parser(word), :literal),
+        instance(Token, parser(footnote), :footnote),
+        instance(Token, parser(quotes), :quote),
+        instance(Token, parser(delimiter), :delimiter)
+        , instance(Token, r"^[\|\n]", :delimiter)
+        , instance(Token, r"^[][{}()<>]", :paren)
+        , instance(Token, parser(r"[-+*/%&!=]"), :operator)
+        , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
+    ]
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
         bracket_reference,
-        
+        seq(TokenPair{Symbol,Vector{Token}},
+            r"<nowiki>"i, regex_neg_lookahead(r"</nowiki>"i,r"(?:.|[\n])"), r"</nowiki>"i;
+            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...)), v[2]))
+            ),
+        seq(TokenPair{Symbol,Vector{Token}},
+            r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
+            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), v[2]))
+            ),
         seq(Node{Line{NamedString,AbstractToken}},
             "<",
             # 2
@@ -403,16 +421,7 @@ function wikitext(;namespace = "wikt:de")
 ##    push!(wikitext.els, parenthesisP(:german_quote))
 ##    push!(wikitext.els, parenthesisP("'''"))
 
-    for p in [
-        instance(Token, parser(word), :literal),
-        instance(Token, parser(footnote), :footnote),
-        instance(Token, parser(quotes), :quote),
-        instance(Token, parser(delimiter), :delimiter)
-        , instance(Token, r"^[\|\n]", :delimiter)
-        , instance(Token, r"^[][{}()<>]", :paren)
-        , instance(Token, parser(r"[-+*/%&!=]"), :operator)
-        , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
-    ]
+    for p in simple_tokens
         push!(wikitext.els, p)
     end
 
