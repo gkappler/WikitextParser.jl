@@ -144,7 +144,7 @@ function table_cell_parser(node="td",
         opt( seq( attributes,
                   ## ignore dummy format, e.g. ''formatting''
                   r"^[^\|\n!]*\|(?![\|])"; transform=1)),
-        regex_neg_lookahead(r"\|\||!!",r"[^\n]");
+        regex_neg_lookahead(r"\|\||!!|\n *(?:\||!)");
         transform=(v,i) -> Node(node, v[2],
             tokenize(inner,v[3])))
 end
@@ -169,7 +169,7 @@ function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText())
         # 5 
         alternate(table_cell_parsers(inner),newline),
         rep(seq(N,
-                "|-", tok(inline,attributes), newline,
+                r"\|-+", tok(inline,attributes), newline,
                 alternate(table_cell_parsers(inner),newline);
                 transform=(v,i) -> Node{AbstractToken}("tr", v[2], vcat(v[4]...)))),
         rep(whitenewline),
