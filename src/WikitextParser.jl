@@ -52,13 +52,14 @@ function Base.show(io::IO, v::Title{S,T}) where {S,T}
     print(io, v.text)
 end
 
-wdelim = r"^[ \t\r\n]*"
+wdelim = r"^[ \t\r\n]+"
 
 attributes = alternate(
     seq(Token,
-        opt(whitespace), word, r"^[ \r\n]*=[ \r\n]*\"[ \r\n]*",
-        r"^[^\"\n]*",r"[ \r\n]*\"";
-        transform = (v,i) -> Token(v[2], intern(v[4])),
+        word, r"^[ \r\n]*","=", r"^[ \r\n]*",
+        alt(seq("\"",regex_neg_lookahead("\"",r"(?:.|\\\")"),"\""; transform=2),
+            r"[-+]?[0-9]+", r"#[0-9A-Fa-f]{6}");
+        transform = (v,i) -> Token(v[1], intern(v[5])),
         ## log=true,
         ), wdelim)
 
@@ -200,14 +201,22 @@ function wikitext(;namespace = "wikt:de")
         seq(Node{Line{NamedString,AbstractToken}},
             "<",
             # 2
-            word, wdelim, ## todo: lookback!!
+            seq(opt(wdelim),word,opt(wdelim); transform=2), 
             # 4
             attributes,
-            r"/>", 
-            transform = (v,i) -> Node(intern(v[2]),v[4], Line{NamedString,AbstractToken}[])
+            "/>";
+            transform = (v,i) -> Node(intern(v[2]),v[3], Line{NamedString,AbstractToken}[])
             )
     )
     wikilink = wiki_link(;namespace = namespace)    
+
+    for p in [
+        ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
+        instance(Token, r"^<br */?>"i, :delimiter)
+        instance(Token, r"^&[[:alpha:]]+;"i, :htmlescape)
+    ]
+        push!(wikitext.els, p)
+    end
 
     wiki_list(;until) = seq(
         Line{NamedString,LineContent},
@@ -331,21 +340,21 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els,
           seq(Node{Line{NamedString,AbstractToken}},
-              "<", wdelim,
+              "<", 
+              # 2
+              seq(opt(wdelim),word,opt(wdelim); transform=2), ## todo: lookback!!
               # 3
-              word, wdelim, ## todo: lookback!!
-              # 5
               attributes,
               ">", 
-              # 7 ## todo: recursive html parser
+              # 5 ## todo: recursive html parser
               lines_stop(until="</"), ## todo: use #3!!
               "</",
               # 14
               word, ## todo: use #3!!
               r">";
               transform = (v,i) -> begin
-              Node(Symbol(intern(v[3])),
-                   v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
+              Node(Symbol(intern(v[2])),
+                   v[3], v[5]) ##[ Token(:untokenized,intern(v[7])) ])
               end
               ))
 
