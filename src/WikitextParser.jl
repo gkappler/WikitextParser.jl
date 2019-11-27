@@ -409,7 +409,7 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els, parenthesisTempered(:htmlcomment))
 
-##    push!(wikitext.els, parenthesisP(:paren)) ## used for filtering from wiki word in meaning 
+    push!(wikitext.els, parenthesisP(:paren)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext.els, parenthesisP(:bracket))
 ##    push!(wikitext.els, parenthesisP(:curly))
 ##    push!(wikitext.els, parenthesisP(:angle))
