@@ -225,6 +225,7 @@ function wikitext(;namespace = "wikt:de")
         rep_stop(wikitext,alt(newline,until));
         transform = (v,i) -> Line(v[1], v[2])
     );
+    wiki_lines(;kw...) = [ wiki_list(;kw...), wiki_content(;kw...) ];
 
     function parenthesisTempered(name::Symbol)
         open,close = wiki_parentheses[name]
@@ -243,9 +244,8 @@ function wikitext(;namespace = "wikt:de")
         parenthesisP(name,wiki_parentheses[name]...)
     end
     
-    wiki_lines(;kw...) = [ wiki_list(;kw...), wiki_content(;kw...) ];
-    template_inner = alternate(
-        alt(wiki_lines(until=alt("|","}}"))...), newline;
+    lines_stop(;until) = alternate(
+        alt(wiki_lines(until=until)...), newline;
         appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
             l.prefix,
             vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
@@ -262,13 +262,30 @@ function wikitext(;namespace = "wikt:de")
                     opt(newline),
                     "|",
                     opt(key_parser,"="; default="", transform_seq=1),
-                    template_inner;
+                    lines_stop(until="|");
                     ## todo: in parser have default option to intern string during building instance
                     transform = (v,i) -> intern(v[3]) => v[4]),
                      r"^ *\|- *"*newline),
                 opt(newline),
                 "|}"; 
                 transform=(v,i) -> Template((v[2]),v[3])))
+    end
+
+    function wiki_expression(key_parser=r"^[-[:alnum:]. _,*]*")
+        seq(
+            Template{NamedString,LineContent},
+            "{{#",
+            word,":", opt(whitespace),
+            alternate(
+                seq(Pair{String, Paragraph{NamedString,LineContent}},
+                    opt(key_parser,"="; default="", transform_seq=1),
+                    lines_stop(until=alt("|","}}")),
+                    opt(newline);
+                    ## todo: in parser have default option to intern string during building instance
+                    transform = (v,i) -> intern(v[1]) => v[2]),
+                "|"),
+            "}}"; 
+            transform=(v,i) -> Template(("#"*v[2]),v[5]))
     end
 
     function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*")
@@ -282,13 +299,25 @@ function wikitext(;namespace = "wikt:de")
                     opt(newline),
                     "|",
                     opt(key_parser,"="; default="", transform_seq=1),
-                    template_inner,
+                    lines_stop(until=alt("|","}}")),
                     opt(newline);
                     ## todo: in parser have default option to intern string during building instance
                     transform = (v,i) -> intern(v[3]) => v[4]),
                 "}}"); 
             transform=(v,i) -> Template((v[2]),v[3]))
     end
+
+    function template_parameter()
+        seq(
+            TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineContent}}},
+            "{{{",
+            rep_stop(wikitext,alt("|","}}}")),
+            "|",
+            lines_stop(until="}}}"),
+            "}}}"; 
+            transform=(v,i) -> TokenPair(v[2],v[4]))
+    end
+        
 
     heading(n) = seq(
         Line{NamedString, LineContent},
@@ -307,10 +336,10 @@ function wikitext(;namespace = "wikt:de")
               attributes,
               ">", 
               # 7 ## todo: recursive html parser
-              tok(r"^[^<]*"s, template_inner),
+              lines_stop(until="</"), ## todo: use #3!!
               "</",
               # 14
-              word, ## todo: lookback!!
+              word, ## todo: use #3!!
               r">";
               transform = (v,i) -> begin
               Node(Symbol(intern(v[3])),
@@ -343,11 +372,13 @@ function wikitext(;namespace = "wikt:de")
                                 Regex("^"*regex_string("[…]"))))
     push!(wikitext.els,wiki_external_link);
 
+    push!(wikitext.els,template_parameter());
+    push!(wikitext.els,wiki_expression());
     push!(wikitext.els,wiki_template(nothing));
 
-    push!(wikitext.els,table_parser(template_inner));
+    push!(wikitext.els,table_parser(lines_stop(until=alt("|","}}"))));
 
-    push!(wikitext.els, parenthesisP(:htmlcomment))
+    push!(wikitext.els, parenthesisTempered(:htmlcomment))
 
     push!(wikitext.els, parenthesisP(:paren)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext.els, parenthesisP(:bracket))
