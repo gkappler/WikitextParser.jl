@@ -160,7 +160,7 @@ end
 
 function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText()))
     ## N = Node{Node{eltype(result_type(inner))}}
-    N = Node{AbstractToken}
+    N = AbstractToken
     seq(Node{N},
         "{|", tok(inline,attributes), newline,
         # 4
@@ -177,15 +177,18 @@ function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText())
         transform=(v,i) -> begin
         if !isempty(v[5])
         pushfirst!(v[6],
-              Node{AbstractToken}("tr", [], vcat(v[5]...)))
+              Node("tr", [], vcat(v[5]...)))
         end
         if !isempty(v[4])
         pushfirst!(v[6],
-              Node{AbstractToken}("caption", [], vcat(v[4]...)))
+              Node("caption", [], vcat(v[4]...)))
         end
         Node{N}("table",v[2], v[6])
         end)
 end
+
+export TemplateParameter
+TemplateParameter = TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineContent}}}
 
 export wikitext
 function wikitext(;namespace = "wikt:de")
@@ -308,13 +311,13 @@ function wikitext(;namespace = "wikt:de")
 
     function template_parameter()
         seq(
-            TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineContent}}},
+            TemplateParameter,
             "{{{",
             rep_stop(wikitext,alt("|","}}}")),
-            "|",
-            lines_stop(until="}}}"),
+            opt(seq("|", lines_stop(until="}}}");
+                    transform=2)),
             "}}}"; 
-            transform=(v,i) -> TokenPair(v[2],v[4]))
+            transform=(v,i) -> TokenPair(v[2],v[3]))
     end
         
 
