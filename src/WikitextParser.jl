@@ -362,7 +362,6 @@ function wikitext(;namespace = "wikt:de")
 ##    push!(wikitext.els, parenthesisP("'''"))
 
     for p in [
-        instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
         instance(Token, parser(word), :literal),
         instance(Token, parser(footnote), :footnote),
         instance(Token, parser(quotes), :quote),
