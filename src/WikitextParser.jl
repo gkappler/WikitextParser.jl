@@ -4,7 +4,7 @@ using InternedStrings
 
 using ParserAlchemy
 using ParserAlchemy.Tokens
-import ParserAlchemy: inline, splitter, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
+import ParserAlchemy: inline, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
 import ParserAlchemy.Tokens: NamedString, Token
 import ParserAlchemy.Tokens: Node, Template, TokenPair, Line, LineContent, Paragraph
@@ -619,9 +619,10 @@ end
 function parse_overview(v::Vector{<:Line})
     parse_overview(isempty(v) ? Template("NoLanguage NoWordType Übersicht") : v[1].tokens[1])
 end
+
 wiktionary_de_content=[
                 is_template_line("Übersetzungen", ignore, Missing) => (:translations, is_line()),
-                is_template_line(t -> match(r"Übersicht",t.template)!==nothing) => (:overview, missing),
+                is_template_line(t -> match(r"Übersicht", t.template)!==nothing) => (:overview, missing),
                 is_template_line("Nebenformen", ignore, Missing) => (:variants, is_line()),
                 is_template_line("Entlehnungen", ignore, Missing) => (:variants, is_line()),
                 is_template_line("Nicht mehr gültige Schreibweisen") => (:deprecated, is_line()),
@@ -632,8 +633,11 @@ wiktionary_de_content=[
                 is_template_line("Aussprache", ignore, Missing) => (:phonetic, is_line()),
                 is_template_line("Oberbegriffe", ignore, Missing) => (:superterms, is_line()),
                 is_template_line("Unterbegriffe", ignore, Missing) => (:subterms, is_line()),
+                is_template_line("Teilbegriffe", ignore, Missing) => (:parts, is_line()),
                 is_template_line("Bedeutungen", ignore, Missing) => (:meaning, is_line()),
                 is_template_line("Synonyme", ignore, Missing) => (:synonyms, is_line()),
+                is_template_line("Weibliche Wortformen", ignore, Missing) => (:synonyms, is_line()),
+                is_template_line("Männliche Wortformen", ignore, Missing) => (:synonyms, is_line()), # exists?
                 is_template_line("Sinnverwandte Wörter", ignore, Missing) => (:synonyms, is_line()),
                 is_template_line("Wortbildungen", ignore, Missing) => (:formations, is_line()),
                 is_template_line("Gegenwörter", ignore, Missing) => (:antonyms, is_line()),
