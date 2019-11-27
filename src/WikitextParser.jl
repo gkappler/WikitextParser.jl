@@ -128,7 +128,6 @@ wiki_link(;namespace = "wikt:de") =
 
 wiki_parentheses = Dict{Any,Any}(
     pairs(ParserAlchemy.Tokens.parentheses)...,
-    :htmlcomment=> ("<!--","-->"),
     :italics=>("''","''"),
     :bold=>("'''","'''"),
     :bolditalics=>("''''","''''")
