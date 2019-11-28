@@ -398,7 +398,7 @@ function wikitext(;namespace = "wikt:de")
           seq(Node{Line{NamedString,AbstractToken}},
               "<", 
               # 2
-              seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2, log=true), ## todo: lookback!!
+              seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2), ## todo: lookback!!
               # 3
               attributes,
               ">", 
