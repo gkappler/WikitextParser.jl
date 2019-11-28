@@ -383,7 +383,10 @@ function wikitext(;namespace = "wikt:de")
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
-    push!(wikitext.els,  html(wikitext))
+    push!(wikitext.els, html(Line{NamedString,AbstractToken},
+                             anyhtmltag,
+                             until -> seq(lines_stop(wikitext; until= (@show until)), until; transform=1)
+                             ))
 
     push!(wikitext.els,wikilink);
 
