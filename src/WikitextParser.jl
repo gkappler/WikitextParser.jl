@@ -235,12 +235,12 @@ wiki_content(wikitext;until) = seq(
 );
 wiki_lines(wikitext;kw...) = [ wiki_list(wikitext;kw...), wiki_content(wikitext;kw...) ];
 
-function parenthesisTempered(name::Symbol,wikitext)
+function parenthesisTempered(name::Symbol,wikitext,flags="")
     open,close = wiki_parentheses[name]
     inner=rep(wikitext)
     instance(TokenPair{Symbol, Vector{LineContent}},
              (v,i) -> TokenPair(name, tokenize(inner, v[1])),
-             regex_tempered_greedy(open,close))
+             regex_tempered_greedy(open,close,flags))
 end
 
 function parenthesisP(name::Symbol, wikitext, open::String, close=open)
@@ -400,7 +400,7 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext.els,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
 
-    push!(wikitext.els, parenthesisTempered(:htmlcomment, wikitext))
+    push!(wikitext.els, parenthesisTempered(:htmlcomment, wikitext,"s"))
 
     push!(wikitext.els, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext.els, parenthesisP(:bracket))
