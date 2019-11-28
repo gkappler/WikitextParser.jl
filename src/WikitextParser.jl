@@ -385,7 +385,7 @@ function wikitext(;namespace = "wikt:de")
     
     push!(wikitext.els, html(Line{NamedString,AbstractToken},
                              anyhtmltag,
-                             until -> seq(lines_stop(wikitext; until= (@show until)), until; transform=1)
+                             until -> seq(lines_stop(wikitext; until= until), until; transform=1)
                              ))
 
     push!(wikitext.els,wikilink);
