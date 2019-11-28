@@ -582,7 +582,8 @@ function prepend_prefix!(v::Vector{<:Line},y)
     filter!(t -> !isempty(t.tokens), v)
 end
 
-function parse_overview(t::Template)
+function parse_overview(namespace, w, t::Template)
+    ## language = v.word[1].tokens[3],
     images = Line{NamedString,LineContent}[]
     inflections = Token[]
     overview_parser = seq(Vector{String},
@@ -595,19 +596,33 @@ function parse_overview(t::Template)
         #     dump(a)
         #     error(typeof(a))
         # end
-        val = a.second[1].tokens[1]
-        imp = tokenize(image_argument_parser, a.first)
-        if imp !== nothing
-            append!(images, prepend_prefix!(a.second, imp))
-        elseif a.first==""
-            ## push!(args, "$i" => val)
-        elseif a.first in ["Genus"]
-            push!(args, a.first => val)
-        else
-            push!(inflections, Token(a.first,string(val)))
+        if !isempty(a.second) && !isempty(a.second[1].tokens)
+            val = a.second[1].tokens[1]
+            imp = tokenize(image_argument_parser, a.first)
+            if imp !== nothing
+                append!(images, prepend_prefix!(a.second, imp))
+            elseif a.first==""
+                ## push!(args, "$i" => val)
+            elseif a.first in ["Genus"]
+                push!(args, a.first => val)
+            else
+                push!(inflections, Token(a.first,string(val)))
+                # imp = tokenize(
+                #     r"^([^[:digit:]]+|[[:digit:]]\. Person) *([[:digit:]]*)",
+                #     a.first)
+                # if imp !== nothing
+                #     push!(inflections, Token(imp[1],string(val)))
+                # else # if a.first in ["Genus"]
+                #     @warn "no key" t a
+                #     error(a.first)
+                #     push!(args, a)
+                # end
+            end
         end
     end
-    ( language = language,
+    ( word = Token(namespace, intern(trimstring(
+        join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
+      language = language,
       wordtype = wordtype,
       inflections = inflections,
       images = images,
@@ -616,8 +631,8 @@ end
 
 
       
-function parse_overview(v::Vector{<:Line})
-    parse_overview(isempty(v) ? Template("NoLanguage NoWordType Übersicht") : v[1].tokens[1])
+function parse_overview(namespace, w,v::Vector{<:Line})
+    parse_overview(namespace, w,isempty(v) ? Template("NoLanguage NoWordType Übersicht") : v[1].tokens[1])
 end
 
 wiktionary_de_content=[
@@ -683,11 +698,6 @@ function wiki_meaning(v;namespace = "wikt:de")
     L = Line{NamedString,LineContent}
     getval(val,p) =  p => ( ( haskey(val,p) && val[p]!==missing ) ? val[p] : L[] )
     fields = [ x.second[1] for x in wiktionary_de_content ]
-    base=(
-        word = Token(namespace, intern(trimstring(
-            join(string.(filter(t-> t isa Token && variable(t)!=:paren,v.word[1].tokens)))))),
-        ## todo: parse
-    )
     function inner(wt)
         meaning_data = Dict{String,Dict{Symbol,Vector{L}}}()
         function pushit(num,k,val)
@@ -735,6 +745,8 @@ function wiki_meaning(v;namespace = "wikt:de")
                 end
             end
         end
+        val = get(meaning_data,"?",Dict())
+        base = parse_overview(namespace, v.word,getval(val,:overview).second)
         meanings = [ ( word=base.word, order=m,
                        ( getval(val,p)
                          for p in fields)... )
@@ -742,10 +754,8 @@ function wiki_meaning(v;namespace = "wikt:de")
                      if !in(m, ["?","[*]"])
                      ]
         
-        val = get(meaning_data,"?",Dict())
         ( merge(## word_type=Token(:word_type,join(string.(filter(isinformative,wt[1].tokens)))),
                 base,
-                parse_overview(getval(val,:overview).second),
                 (;( getval(val,p)
                     for p in fields
                     if p != :overview)...
