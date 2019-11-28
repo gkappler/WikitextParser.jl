@@ -4,8 +4,9 @@ using InternedStrings
 
 using ParserAlchemy
 using ParserAlchemy.Tokens
-import ParserAlchemy: inline, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation
+import ParserAlchemy: inline, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation, wdelim
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
+import ParserAlchemy.Tokens: html, attributes
 import ParserAlchemy.Tokens: NamedString, Token
 import ParserAlchemy.Tokens: Node, Template, TokenPair, Line, LineContent, Paragraph
 import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_heading
@@ -51,18 +52,6 @@ function Base.show(io::IO, v::Title{S,T}) where {S,T}
     println(io,v.title)
     print(io, v.text)
 end
-
-wdelim = r"^[ \t\r\n]+"
-
-attributes = alternate(
-    seq(Token,
-        word, r"^[ \r\n]*","=", r"^[ \r\n]*",
-        alt(seq("\"",regex_neg_lookahead("\"",r"(?:.|\\\")"),"\""; transform=2),
-            r"[-+]?[0-9]+", r"#[0-9A-Fa-f]{6}");
-        transform = (v,i) -> Token(v[1], intern(v[5])),
-        ## log=true,
-        ), wdelim)
-
 
 
 
@@ -191,7 +180,6 @@ end
 export TemplateParameter
 TemplateParameter = TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineContent}}}
 
-export wikitext
 ## from https://phabricator.wikimedia.org/source/mediawiki/browse/REL1_29/includes/Sanitizer.php
 valid_html_tags = (
     htmlpairsStatic = [ # Tags that must be closed
@@ -346,20 +334,21 @@ heading(n,wikitext) = seq(
     combine=true, 
     transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
 
+simple_tokens = [
+    ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
+    instance(Token, parser(word), :literal),
+    instance(Token, parser(footnote), :footnote),
+    instance(Token, parser(quotes), :quote),
+    instance(Token, parser(delimiter), :delimiter)
+    , instance(Token, r"^[\|\n]", :delimiter)
+    , instance(Token, r"^[][{}()<>]", :paren)
+    , instance(Token, parser(r"[-+*/%&!=]"), :operator)
+    , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
+]
 
+export wikitext, valid_html_tags
 function wikitext(;namespace = "wikt:de")
     anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")")
-    simple_tokens = [
-        ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
-        instance(Token, parser(word), :literal),
-        instance(Token, parser(footnote), :footnote),
-        instance(Token, parser(quotes), :quote),
-        instance(Token, parser(delimiter), :delimiter)
-        , instance(Token, r"^[\|\n]", :delimiter)
-        , instance(Token, r"^[][{}()<>]", :paren)
-        , instance(Token, parser(r"[-+*/%&!=]"), :operator)
-        , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
-    ]
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
@@ -394,44 +383,7 @@ function wikitext(;namespace = "wikt:de")
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
-    push!(wikitext.els,
-          seq(Node{Line{NamedString,AbstractToken}},
-              "<", 
-              # 2
-              seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2), ## todo: lookback!!
-              # 3
-              attributes,
-              ">", 
-              # 5 ## todo: recursive html parser
-              lines_stop(wikitext,until="</"), ## todo: use #3!!
-              "</",
-              # 14
-              anyhtmltag, ## todo: use #3!!
-              r">";
-              transform = (v,i) -> begin
-              Node(Symbol(intern(v[2])),
-                   v[3], v[5]) ##[ Token(:untokenized,intern(v[7])) ])
-              end
-              ))
-
-    # push!(wikitext.els,
-    #       seq(Node,
-    #           "[ \r\n]*<[ \r\n]*",
-    #           # 3
-    #           word, wdelim, ## todo: lookback!!
-    #           # 5
-    #           attributes,
-    #           r"^[ \r\n]*>[ \r\n]*", 
-    #           # 7 ## todo: recursive html parser
-    #           tok(r"^[^<]*"s, rep(wiki_content)),
-    #           r"^[ \r\n]*<[ \r\n]*/[ \r\n]*",
-    #           # 14
-    #           word, ## todo: lookback!!
-    #           r"^[ \r\n]*>[ \r\n]*";
-    #           transform = (v,i) -> Node(Symbol(intern(v[3])),
-    #                                     v[5], v[7]) ##[ Token(:untokenized,intern(v[7])) ])
-    #           ))
-
+    push!(wikitext.els,  ParserAlchemy.tokens.html(wikitext))
 
     push!(wikitext.els,wikilink);
 
