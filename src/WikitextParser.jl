@@ -383,7 +383,7 @@ function wikitext(;namespace = "wikt:de")
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
-    push!(wikitext.els,  ParserAlchemy.tokens.html(wikitext))
+    push!(wikitext.els,  html(wikitext))
 
     push!(wikitext.els,wikilink);
 
