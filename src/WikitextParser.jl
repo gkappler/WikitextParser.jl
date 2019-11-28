@@ -192,7 +192,162 @@ export TemplateParameter
 TemplateParameter = TokenPair{Vector{LineContent}, Vector{Line{NamedString,LineContent}}}
 
 export wikitext
+## from https://phabricator.wikimedia.org/source/mediawiki/browse/REL1_29/includes/Sanitizer.php
+valid_html_tags = (
+    htmlpairsStatic = [ # Tags that must be closed
+                        "b", "bdi", "del", "i", "ins", "u", "font", "big", "small", "sub", "sup", "h1",
+                        "h2", "h3", "h4", "h5", "h6", "cite", "code", "em", "s",
+                        "strike", "strong", "tt", "var", "div", "center",
+                        "blockquote", "ol", "ul", "dl", "table", "caption", "pre",
+                        "ruby", "rb", "rp", "rt", "rtc", "p", "span", "abbr", "dfn",
+                        "kbd", "samp", "data", "time", "mark"
+                        ],
+    htmlsingle = [
+        "br", "wbr", "hr", "li", "dt", "dd", "meta", "link"
+    ],
+    htmlsingleonly = [ # Elements that cannot have close tags
+                       "br", "wbr", "hr", "meta", "link"
+                       ],
+    htmlnest = [ # Tags that can be nested--??
+                 "table", "tr", "td", "th", "div", "blockquote", "ol", "ul",
+                 "li", "dl", "dt", "dd", "font", "big", "small", "sub", "sup", "span",
+                 "var", "kbd", "samp", "em", "strong", "q", "ruby", "bdo"
+                 ],
+    tabletags = [ # Can only appear inside table, we will close them
+                  "td", "th", "tr",
+                  ],
+    htmllist = [ # Tags used by list
+                 "ul", "ol",
+                 ],
+    listtags = [ # Tags that can appear in a list
+                 "li",
+                 ],
+)
+
+
+
+wiki_list(wikitext;until) = seq(
+    Line{NamedString,LineContent},
+    # :indent =>
+    alt(list_item),
+    # :tokens =>
+    rep_stop(wikitext, alt(newline,until));
+    transform = (v,i) -> Line(v[1], v[2]))
+
+wiki_content(wikitext;until) = seq(
+    Line{NamedString,LineContent},
+    # :indent =>
+    instance(Vector{NamedString},
+             (v,i)-> v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))],
+             r"^:*"),
+    # :tokens =>
+    rep_stop(wikitext,alt(newline,until));
+    transform = (v,i) -> Line(v[1], v[2])
+);
+wiki_lines(wikitext;kw...) = [ wiki_list(wikitext;kw...), wiki_content(wikitext;kw...) ];
+
+function parenthesisTempered(name::Symbol,wikitext)
+    open,close = wiki_parentheses[name]
+    inner=rep(wikitext)
+    instance(TokenPair{Symbol, Vector{LineContent}},
+             (v,i) -> TokenPair(name, tokenize(inner, v[1])),
+             regex_tempered_greedy(open,close))
+end
+
+function parenthesisP(name::Symbol, wikitext, open::String, close=open)
+    seq(TokenPair{Symbol, Vector{LineContent}},
+        open, rep_until(wikitext, close);
+        transform=(v,i) -> TokenPair(name,v[2]))
+end
+function parenthesisP(name::Symbol, wikitext)
+    parenthesisP(name, wikitext, wiki_parentheses[name]...)
+end
+
+lines_stop(wikitext;until) = alternate(
+    alt(wiki_lines(wikitext,until=until)...), newline;
+    appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
+        l.prefix,
+        vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
+
+
+function wiki_table(x=r"[^}{\|]+")
+    seq(
+        TokenPair,
+        "{|",
+        ##rows
+        alternate(    
+            rep( alt(
+                opt(newline),
+                "|",
+                opt(key_parser,"="; default="", transform_seq=1),
+                lines_stop(until="|");
+                ## todo: in parser have default option to intern string during building instance
+                transform = (v,i) -> intern(v[3]) => v[4]),
+                 r"^ *\|- *"*newline),
+            opt(newline),
+            "|}"; 
+            transform=(v,i) -> Template((v[2]),v[3])))
+end
+
+function wiki_expression(wikitext, key_parser=r"^[-[:alnum:]. _,*]*")
+    seq(
+        Template{NamedString,LineContent},
+        "{{#",
+        word,":", opt(whitespace),
+        alternate(
+            seq(Pair{String, Paragraph{NamedString,LineContent}},
+                opt(key_parser,"="; default="", transform_seq=1),
+                lines_stop(wikitext; until=alt("|","}}")),
+                opt(newline);
+                ## todo: in parser have default option to intern string during building instance
+                transform = (v,i) -> intern(v[1]) => v[2]),
+            "|"),
+        "}}"; 
+        transform=(v,i) -> Template(("#"*v[2]),v[5]))
+end
+
+function wiki_template(wikitext, x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*")
+    seq(
+        Template{NamedString,LineContent},
+        "{{",
+        ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}}"))) :
+          x ),
+        rep_until(
+            seq(Pair{String, Paragraph{NamedString,LineContent}},
+                opt(newline),
+                "|",
+                opt(key_parser,"="; default="", transform_seq=1),
+                lines_stop(wikitext; until=alt("|","}}")),
+                opt(newline);
+                ## todo: in parser have default option to intern string during building instance
+                transform = (v,i) -> intern(v[3]) => v[4]),
+            "}}"); 
+        transform=(v,i) -> Template((v[2]),v[3]))
+end
+
+function template_parameter(wikitext)
+    seq(
+        TemplateParameter,
+        "{{{",
+        rep_stop(wikitext,alt("|","}}}")),
+        opt(seq("|", lines_stop(wikitext,until="}}}");
+                transform=2)),
+        "}}}"; 
+        transform=(v,i) -> TokenPair(v[2],v[3]))
+end
+
+
+heading(n,wikitext) = seq(
+    Line{NamedString, LineContent},
+    Regex("^={$n,$n} *"),
+    tok(r"[^\n]*",rep(wikitext)),
+    Regex("^ *={$n,$n} *");
+    combine=true, 
+    transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
+
+
 function wikitext(;namespace = "wikt:de")
+    anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")")
     simple_tokens = [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
         instance(Token, parser(word), :literal),
@@ -214,19 +369,19 @@ function wikitext(;namespace = "wikt:de")
             ),
         seq(TokenPair{Symbol,Vector{Token}},
             r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
-            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), v[2]))
+            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), @show v[2]))
             ),
         seq(Node{Line{NamedString,AbstractToken}},
             "<",
             # 2
-            seq(opt(wdelim),word,opt(wdelim); transform=2), 
+            seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2), 
             # 4
             attributes,
             "/>";
             transform = (v,i) -> Node(intern(v[2]),v[3], Line{NamedString,AbstractToken}[])
             )
     )
-    wikilink = wiki_link(;namespace = namespace)    
+    wikilink = wiki_link(wikitext;namespace = namespace)    
 
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
@@ -236,139 +391,21 @@ function wikitext(;namespace = "wikt:de")
         push!(wikitext.els, p)
     end
 
-    wiki_list(;until) = seq(
-        Line{NamedString,LineContent},
-        # :indent =>
-        alt(list_item),
-        # :tokens =>
-        rep_stop(wikitext, alt(newline,until));
-        transform = (v,i) -> Line(v[1], v[2]))
-
-    wiki_content(;until) = seq(
-        Line{NamedString,LineContent},
-        # :indent =>
-        instance(Vector{NamedString},
-                 (v,i)-> v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))],
-                 r"^:*"),
-        # :tokens =>
-        rep_stop(wikitext,alt(newline,until));
-        transform = (v,i) -> Line(v[1], v[2])
-    );
-    wiki_lines(;kw...) = [ wiki_list(;kw...), wiki_content(;kw...) ];
-
-    function parenthesisTempered(name::Symbol)
-        open,close = wiki_parentheses[name]
-        inner=rep(wikitext)
-        instance(TokenPair{Symbol, Vector{LineContent}},
-                 (v,i) -> TokenPair(name, tokenize(inner, v[1])),
-                 regex_tempered_greedy(open,close))
-    end
-
-    function parenthesisP(name::Symbol,open::String, close=open)
-        seq(TokenPair{Symbol, Vector{LineContent}},
-            open, rep_until(wikitext, close);
-            transform=(v,i) -> TokenPair(name,v[2]))
-    end
-    function parenthesisP(name::Symbol)
-        parenthesisP(name,wiki_parentheses[name]...)
-    end
-    
-    lines_stop(;until) = alternate(
-        alt(wiki_lines(until=until)...), newline;
-        appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
-            l.prefix,
-            vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
-
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
-
-    function wiki_table(x=r"[^}{\|]+")
-        seq(
-            TokenPair,
-            "{|",
-            ##rows
-            alternate(    
-                rep( alt(
-                    opt(newline),
-                    "|",
-                    opt(key_parser,"="; default="", transform_seq=1),
-                    lines_stop(until="|");
-                    ## todo: in parser have default option to intern string during building instance
-                    transform = (v,i) -> intern(v[3]) => v[4]),
-                     r"^ *\|- *"*newline),
-                opt(newline),
-                "|}"; 
-                transform=(v,i) -> Template((v[2]),v[3])))
-    end
-
-    function wiki_expression(key_parser=r"^[-[:alnum:]. _,*]*")
-        seq(
-            Template{NamedString,LineContent},
-            "{{#",
-            word,":", opt(whitespace),
-            alternate(
-                seq(Pair{String, Paragraph{NamedString,LineContent}},
-                    opt(key_parser,"="; default="", transform_seq=1),
-                    lines_stop(until=alt("|","}}")),
-                    opt(newline);
-                    ## todo: in parser have default option to intern string during building instance
-                    transform = (v,i) -> intern(v[1]) => v[2]),
-                "|"),
-            "}}"; 
-            transform=(v,i) -> Template(("#"*v[2]),v[5]))
-    end
-
-    function wiki_template(x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*")
-        seq(
-            Template{NamedString,LineContent},
-            "{{",
-            ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}}"))) :
-              x ),
-            rep_until(
-                seq(Pair{String, Paragraph{NamedString,LineContent}},
-                    opt(newline),
-                    "|",
-                    opt(key_parser,"="; default="", transform_seq=1),
-                    lines_stop(until=alt("|","}}")),
-                    opt(newline);
-                    ## todo: in parser have default option to intern string during building instance
-                    transform = (v,i) -> intern(v[3]) => v[4]),
-                "}}"); 
-            transform=(v,i) -> Template((v[2]),v[3]))
-    end
-
-    function template_parameter()
-        seq(
-            TemplateParameter,
-            "{{{",
-            rep_stop(wikitext,alt("|","}}}")),
-            opt(seq("|", lines_stop(until="}}}");
-                    transform=2)),
-            "}}}"; 
-            transform=(v,i) -> TokenPair(v[2],v[3]))
-    end
-        
-
-    heading(n) = seq(
-        Line{NamedString, LineContent},
-        Regex("^={$n,$n} *"),
-        tok(r"[^\n]*",rep(wikitext)),
-        Regex("^ *={$n,$n} *");
-        combine=true, 
-        transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
-
+    
     push!(wikitext.els,
           seq(Node{Line{NamedString,AbstractToken}},
               "<", 
               # 2
-              seq(opt(wdelim),word,opt(wdelim); transform=2), ## todo: lookback!!
+              seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2, log=true), ## todo: lookback!!
               # 3
               attributes,
               ">", 
               # 5 ## todo: recursive html parser
-              lines_stop(until="</"), ## todo: use #3!!
+              lines_stop(wikitext,until="</"), ## todo: use #3!!
               "</",
               # 14
-              word, ## todo: use #3!!
+              anyhtmltag, ## todo: use #3!!
               r">";
               transform = (v,i) -> begin
               Node(Symbol(intern(v[2])),
@@ -401,22 +438,22 @@ function wikitext(;namespace = "wikt:de")
                                 Regex("^"*regex_string("[…]"))))
     push!(wikitext.els,wiki_external_link);
 
-    push!(wikitext.els,template_parameter());
-    push!(wikitext.els,wiki_expression());
-    push!(wikitext.els,wiki_template(nothing));
+    push!(wikitext.els,template_parameter(wikitext));
+    push!(wikitext.els,wiki_expression(wikitext));
+    push!(wikitext.els,wiki_template(wikitext,nothing));
 
-    push!(wikitext.els,table_parser(lines_stop(until=alt("|","}}"))));
+    push!(wikitext.els,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
 
-    push!(wikitext.els, parenthesisTempered(:htmlcomment))
+    push!(wikitext.els, parenthesisTempered(:htmlcomment, wikitext))
 
-    push!(wikitext.els, parenthesisP(:paren)) ## used for filtering from wiki word in meaning 
+    push!(wikitext.els, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext.els, parenthesisP(:bracket))
 ##    push!(wikitext.els, parenthesisP(:curly))
 ##    push!(wikitext.els, parenthesisP(:angle))
 ##    push!(wikitext.els, parenthesisP(:quote))
-    push!(wikitext.els, parenthesisTempered(:bolditalics))
-    push!(wikitext.els, parenthesisTempered(:bold))
-    push!(wikitext.els, parenthesisTempered(:italics))
+    push!(wikitext.els, parenthesisTempered(:bolditalics, wikitext))
+    push!(wikitext.els, parenthesisTempered(:bold, wikitext))
+    push!(wikitext.els, parenthesisTempered(:italics, wikitext))
 ##    push!(wikitext.els, parenthesisP(:squote))
 ##    push!(wikitext.els, parenthesisP(:german_quote))
 ##    push!(wikitext.els, parenthesisP("'''"))
@@ -430,7 +467,7 @@ function wikitext(;namespace = "wikt:de")
         [ v ]
     end
     textblock = alternate(
-        vcat([ heading(level) for level in reverse(1:6) ], wiki_lines(;until=Never())),
+        vcat([ heading(level, wikitext) for level in reverse(1:6) ], wiki_lines(wikitext;until=Never())),
         emptyline; 
         appendf=append_textblock_token)
 
