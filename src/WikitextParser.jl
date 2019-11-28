@@ -118,7 +118,7 @@ macro substringorempty(x,range)
     :( $(esc(x)) === nothing ? "" : $(esc(x))[$(esc(range))] )
 end
 
-wiki_link(;namespace = "wikt:de") =
+wiki_link(wikitext;namespace = "wikt:de") =
     instance(
         WikiLink,
         (v,i) -> WikiLink(substnothing(namespace,v[1]),
@@ -222,6 +222,7 @@ valid_html_tags = (
     listtags = [ # Tags that can appear in a list
                  "li",
                  ],
+    transclusiontags = [ "noinclude", "onlyinclude", "includeonly" ]
 )
 
 
@@ -369,7 +370,7 @@ function wikitext(;namespace = "wikt:de")
             ),
         seq(TokenPair{Symbol,Vector{Token}},
             r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
-            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), @show v[2]))
+            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), v[2]))
             ),
         seq(Node{Line{NamedString,AbstractToken}},
             "<",
