@@ -154,16 +154,19 @@ function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText())
     seq(Node{N},
         "{|", tok(inline,attributes), newline,
         # 4
-        opt(seq("|+", tok(inline,inner), newline; transform=2)),
+        opt(seq("|+", tok(inline,inner), newline; transform=2, log=false)),
         # 5 
-        alternate(table_cell_parsers(inner),newline),
+        alternate(
+            table_cell_parsers(inner),newline),
         rep(seq(N,
                 r"\|-+", tok(inline,attributes), newline,
                 alternate(table_cell_parsers(inner),newline);
-                transform=(v,i) -> Node{AbstractToken}("tr", v[2], vcat(v[4]...)))),
+                transform=(v,i) -> Node{AbstractToken}("tr", v[2], vcat(v[4]...)));
+            log=false),
+        ##r".*"s,
         rep(whitenewline),
-        "|}",opt(r" *\r?\n")
-        ; ## partial=true,
+        "|}",
+        ; partial=true, log=false,
         transform=(v,i) -> begin
         if !isempty(v[5])
         pushfirst!(v[6],
@@ -210,6 +213,7 @@ valid_html_tags = (
     listtags = [ # Tags that can appear in a list
                  "li",
                  ],
+    ref = [ "ref", "references" ],
     transclusiontags = [ "noinclude", "onlyinclude", "includeonly" ]
 )
 
@@ -252,11 +256,18 @@ function parenthesisP(name::Symbol, wikitext)
     parenthesisP(name, wikitext, wiki_parentheses[name]...)
 end
 
-lines_stop(wikitext;until) = alternate(
-    alt(wiki_lines(wikitext,until=until)...), newline;
-    appendf=(l,nl,i) -> [ Line{NamedString,LineContent}(
-        l.prefix,
-        vcat(l.tokens, Token(:whitespace, intern(nl)))) ]);
+lines_stop(wikitext;until) =
+    alternate(
+        alt(wiki_lines(wikitext,until=until)...), newline;
+        appendf=(r,l,nl) ->
+        if l!==missing
+        if nl !== missing
+        push!(l.tokens,
+              Token(:whitespace, intern(nl)))
+        end
+        push!(r,l)
+        end
+    );
 
 
 function wiki_table(x=r"[^}{\|]+")
@@ -348,7 +359,7 @@ simple_tokens = [
 
 export wikitext, valid_html_tags
 function wikitext(;namespace = "wikt:de")
-    anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")")
+    anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")","i")
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
@@ -418,9 +429,13 @@ function wikitext(;namespace = "wikt:de")
         push!(wikitext.els, p)
     end
 
-    function append_textblock_token(v,nl,i)
-        push!(v.tokens, Token(:delimiter, intern(nl)))
-        [ v ]
+    function append_textblock_token(r, v, nl)
+        if v !== missing
+            if nl !== missing
+                push!(v.tokens, Token(:delimiter, intern(nl)))
+            end
+        end
+        push!(r,v)
     end
     textblock = alternate(
         vcat([ heading(level, wikitext) for level in reverse(1:6) ], wiki_lines(wikitext;until=Never())),
