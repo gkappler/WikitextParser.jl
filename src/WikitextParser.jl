@@ -594,10 +594,11 @@ function parse_overview(namespace, w, t::Template)
     ## language = v.word[1].tokens[3],
     images = Line{NamedString,LineContent}[]
     inflections = Token[]
-    overview_parser = seq(Vector{String},
-                          word,whitespace,word,whitespace,"Übersicht";
-                          transform=(v,i) -> String[intern(v[1]),intern(v[3])])
-    language, wordtype = tokenize(overview_parser, t.template)
+    overview_parser = instance(Vector{String},
+                               (v,i) -> String[intern(v[1]),intern(v[2]),intern(v[3])],
+                               r"([[:alpha:]]+) ([[:alpha:]]*) ?Übersicht ?(m|f)?(?:\r?\n)*";
+                               )
+    language, wordtype, genus = tokenize(overview_parser, t.template)
     args = Pair{String,Token}[]
     for (i,a) in enumerate(t.arguments)
         # if !(length(a.second) == 2 && length(a.second[1].tokens)==2)
