@@ -606,7 +606,7 @@ function parse_overview(namespace, w, t::Template)
         # end
         if !isempty(a.second) && !isempty(a.second[1].tokens)
             val = a.second[1].tokens[1]
-            imp = tokenize(image_argument_parser, a.first)
+            imp = tokenize(image_argument_parser, a.first; partial=:nothing)
             if imp !== nothing
                 append!(images, prepend_prefix!(a.second, imp))
             elseif a.first==""
@@ -728,7 +728,7 @@ function wiki_meaning(v;namespace = "wikt:de")
             for e in x
                 num = e.first=="?" ? lastnum : e.first
 
-                let is = tokenize(expand_numbers,InternedStrings.intern(num))
+                let is = tokenize(expand_numbers,InternedStrings.intern(num); partial=nothing)
                     if is === nothing
                         pushit(num,k,e.second)
                     else
