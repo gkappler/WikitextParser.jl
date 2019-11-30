@@ -239,12 +239,14 @@ wiki_content(wikitext;until) = seq(
 );
 wiki_lines(wikitext;kw...) = [ wiki_list(wikitext;kw...), wiki_content(wikitext;kw...) ];
 
-function parenthesisTempered(name::Symbol,wikitext,flags="")
-    open,close = wiki_parentheses[name]
-    inner=rep(wikitext)
-    instance(TokenPair{Symbol, Vector{LineContent}},
+function parenthesisTempered(name::Symbol, inner, open, close=open; flags="")
+    instance(TokenPair{Symbol, result_type(inner)},
              (v,i) -> TokenPair(name, tokenize(inner, v[1])),
              regex_tempered_greedy(open,close,flags))
+end
+
+function parenthesisTempered(name::Symbol,inner;flags="")
+    parenthesisTempered(name, inner, wiki_parentheses[name]...; flags=flags)
 end
 
 function parenthesisP(name::Symbol, wikitext, open::String, close=open)
@@ -399,16 +401,16 @@ function wikitext(;namespace = "wikt:de")
 
     push!(wikitext,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
 
-    push!(wikitext, parenthesisTempered(:htmlcomment, wikitext,"s"))
+    push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,instance(Token,newline,:delimiter))))
 
     push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext, parenthesisP(:bracket))
 ##    push!(wikitext, parenthesisP(:curly))
 ##    push!(wikitext, parenthesisP(:angle))
 ##    push!(wikitext, parenthesisP(:quote))
-    push!(wikitext, parenthesisTempered(:bolditalics, wikitext))
-    push!(wikitext, parenthesisTempered(:bold, wikitext))
-    push!(wikitext, parenthesisTempered(:italics, wikitext))
+    push!(wikitext, parenthesisTempered(:bolditalics, rep(wikitext)))
+    push!(wikitext, parenthesisTempered(:bold, rep(wikitext)))
+    push!(wikitext, parenthesisTempered(:italics, rep(wikitext)))
 ##    push!(wikitext, parenthesisP(:squote))
 ##    push!(wikitext, parenthesisP(:german_quote))
 ##    push!(wikitext, parenthesisP("'''"))
