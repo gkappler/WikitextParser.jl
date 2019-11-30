@@ -384,6 +384,7 @@ function wikitext(;namespace = "wikt:de")
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
+    push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
     push!(wikitext, html(Line{NamedString,AbstractToken},
                              anyhtmltag,
                              until -> seq(lines_stop(wikitext; until= until), until; transform=1)
