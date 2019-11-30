@@ -6,7 +6,7 @@ using ParserAlchemy
 using ParserAlchemy.Tokens
 import ParserAlchemy: inline, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation, wdelim
 import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
-import ParserAlchemy.Tokens: html, attributes
+import ParserAlchemy.Tokens: html, attributes, simple_tokens
 import ParserAlchemy.Tokens: NamedString, Token
 import ParserAlchemy.Tokens: Node, Template, TokenPair, Line, LineContent, Paragraph
 import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_heading
@@ -345,18 +345,6 @@ heading(n,wikitext) = seq(
     combine=true, 
     transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
 
-simple_tokens = [
-    ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
-    instance(Token, parser(word), :literal),
-    instance(Token, parser(footnote), :footnote),
-    instance(Token, parser(quotes), :quote),
-    instance(Token, parser(delimiter), :delimiter)
-    , instance(Token, r"^[\|\n]", :delimiter)
-    , instance(Token, r"^[][{}()<>]", :paren)
-    , instance(Token, parser(r"[-+*/%&!=]"), :operator)
-    , instance(Token, parser(r"[^][(){}\n \t\|]"), :unknown)
-]
-
 export wikitext, valid_html_tags
 function wikitext(;namespace = "wikt:de")
     anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")","i")
@@ -389,44 +377,44 @@ function wikitext(;namespace = "wikt:de")
         instance(Token, r"^<br */?>"i, :delimiter)
         instance(Token, r"^&[[:alpha:]]+;"i, :htmlescape)
     ]
-        push!(wikitext.els, p)
+        push!(wikitext, p)
     end
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
-    push!(wikitext.els, html(Line{NamedString,AbstractToken},
+    push!(wikitext, html(Line{NamedString,AbstractToken},
                              anyhtmltag,
                              until -> seq(lines_stop(wikitext; until= until), until; transform=1)
                              ))
 
-    push!(wikitext.els,wikilink);
+    push!(wikitext,wikilink);
 
-    push!(wikitext.els,instance(Token, (v,i) -> Token(:ellipsis,v),
+    push!(wikitext,instance(Token, (v,i) -> Token(:ellipsis,v),
                                 Regex("^"*regex_string("[…]"))))
-    push!(wikitext.els,wiki_external_link);
+    push!(wikitext,wiki_external_link);
 
-    push!(wikitext.els,template_parameter(wikitext));
-    push!(wikitext.els,wiki_expression(wikitext));
-    push!(wikitext.els,wiki_template(wikitext,nothing));
+    push!(wikitext,template_parameter(wikitext));
+    push!(wikitext,wiki_expression(wikitext));
+    push!(wikitext,wiki_template(wikitext,nothing));
 
-    push!(wikitext.els,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
+    push!(wikitext,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
 
-    push!(wikitext.els, parenthesisTempered(:htmlcomment, wikitext,"s"))
+    push!(wikitext, parenthesisTempered(:htmlcomment, wikitext,"s"))
 
-    push!(wikitext.els, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
-##    push!(wikitext.els, parenthesisP(:bracket))
-##    push!(wikitext.els, parenthesisP(:curly))
-##    push!(wikitext.els, parenthesisP(:angle))
-##    push!(wikitext.els, parenthesisP(:quote))
-    push!(wikitext.els, parenthesisTempered(:bolditalics, wikitext))
-    push!(wikitext.els, parenthesisTempered(:bold, wikitext))
-    push!(wikitext.els, parenthesisTempered(:italics, wikitext))
-##    push!(wikitext.els, parenthesisP(:squote))
-##    push!(wikitext.els, parenthesisP(:german_quote))
-##    push!(wikitext.els, parenthesisP("'''"))
+    push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
+##    push!(wikitext, parenthesisP(:bracket))
+##    push!(wikitext, parenthesisP(:curly))
+##    push!(wikitext, parenthesisP(:angle))
+##    push!(wikitext, parenthesisP(:quote))
+    push!(wikitext, parenthesisTempered(:bolditalics, wikitext))
+    push!(wikitext, parenthesisTempered(:bold, wikitext))
+    push!(wikitext, parenthesisTempered(:italics, wikitext))
+##    push!(wikitext, parenthesisP(:squote))
+##    push!(wikitext, parenthesisP(:german_quote))
+##    push!(wikitext, parenthesisP("'''"))
 
     for p in simple_tokens
-        push!(wikitext.els, p)
+        push!(wikitext, p)
     end
 
     function append_textblock_token(r, v, nl)
