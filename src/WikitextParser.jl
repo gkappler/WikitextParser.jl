@@ -347,7 +347,7 @@ heading(n,wikitext) = seq(
 
 export wikitext, valid_html_tags
 function wikitext(;namespace = "wikt:de")
-    anyhtmltag=Regex("^(?:"*join(unique(vcat(valid_html_tags...)),"|")*")","i")
+    anyhtmltag=Regex("^(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
