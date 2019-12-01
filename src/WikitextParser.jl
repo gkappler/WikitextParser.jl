@@ -622,8 +622,8 @@ function parse_overview(namespace, w, t::Template)
     end
     ( word = Token(namespace, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
-      language = language,
-      wordtype = wordtype,
+      language = Token(:language,language),
+      wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
       images = images,
       wikitext = [ Line(LineContent[t]) ] )
