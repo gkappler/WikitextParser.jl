@@ -345,10 +345,13 @@ end
 heading(n,wikitext) = seq(
     Line{NamedString, LineContent},
     Regex("^={$n,$n} *"),
-    tok(r"[^\n]*",rep(wikitext)),
-    Regex("^ *={$n,$n} *");
-    combine=true, 
-    transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
+    rep_until(wikitext,
+              seq(Regex("^ *={$n,$n}"), NegativeLookahead("="))),
+    rep(wikitext); ## comments sometimes follow
+    transform = (v,i) -> Line{NamedString, LineContent}(
+        [ NamedString(:headline,intern(string(n))) ],
+        ##(@show v[2])))
+        isempty(v[3]) ? v[2] : push!(v[2], Node(:suffix, Token[],v[3]))))
 
 export wikitoken, wikitext, valid_html_tags
 function wikitoken(;namespace = "wikt:de")
