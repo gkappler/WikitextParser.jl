@@ -165,14 +165,26 @@ end
 
 
 
+sloppyhtml(inner_token; stop=tuple()) =
+    alt(instance(Token, r"^<br */?>"i, :delimiter),
+        seq(TokenPair{Symbol,Vector{Token}},
+            r"<nowiki>"i, regex_neg_lookahead(r"</nowiki>"i,r"(?:.|[\n])"), r"</nowiki>"i;
+            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
+            ),
+        seq(TokenPair{Symbol,Vector{Token}},
+            r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
+            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
+            ),
+        html(Line{NamedString,AbstractToken},
+             anyhtmltag) do until
+        seq(lines_stop(inner_token; until= alt(stop...,until)), until; transform=1)
+        end)
+
 function table_parser(inner_word)
     ## N = Node{Node{eltype(result_type(inner))}}
     N = AbstractToken
     inner_partial_html = alt(
-        html(Line{NamedString,AbstractToken},
-             anyhtmltag) do until
-        seq(lines_stop(inner_word; until = alt("||","!!",until)), opt(until); transform=1)
-        end,
+        sloppyhtml(inner_word, stop=("|","!")),
         inner_word)
     seq(Node{AbstractToken,N},
         "{|", rep(alt(attribute_parser, inner_word)),newline,
@@ -353,27 +365,19 @@ heading(n,wikitext) = seq(
         ##(@show v[2])))
         isempty(v[3]) ? v[2] : push!(v[2], Node(:suffix, Token[],v[3]))))
 
+newlinetoken = instance(Token,newline,:delimiter)
+
 export wikitoken, wikitext, valid_html_tags
 function wikitoken(;namespace = "wikt:de")
-    newlinetoken = instance(Token,newline,:delimiter)
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
-        bracket_reference,
-        seq(TokenPair{Symbol,Vector{Token}},
-            r"<nowiki>"i, regex_neg_lookahead(r"</nowiki>"i,r"(?:.|[\n])"), r"</nowiki>"i;
-            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
-            ),
-        seq(TokenPair{Symbol,Vector{Token}},
-            r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
-            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
-            )
+        bracket_reference
     )
     wikilink = wiki_link(wikitext;namespace = namespace)    
 
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
-        instance(Token, r"^<br */?>"i, :delimiter)
         instance(Token, r"^&[[:alpha:]]+;"i, :htmlescape)
     ]
         push!(wikitext, p)
@@ -382,10 +386,7 @@ function wikitoken(;namespace = "wikt:de")
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
     
     push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
-    push!(wikitext, html(Line{NamedString,AbstractToken},
-                         anyhtmltag) do until
-          seq(lines_stop(wikitext; until= until), until; transform=1)
-          end)
+    push!(wikitext, sloppyhtml(wikitext))
 
     push!(wikitext,wikilink);
 
