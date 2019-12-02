@@ -388,7 +388,7 @@ function wikitoken(;namespace = "wikt:de")
     push!(wikitext,wiki_expression(wikitext));
     push!(wikitext,wiki_template(wikitext,nothing));
 
-    push!(wikitext,table_parser(lines_stop(wikitext; until=alt("|","}}"))));
+    push!(wikitext,table_parser(wikitext));
 
     push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,instance(Token,newline,:delimiter))))
 
