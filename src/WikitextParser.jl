@@ -344,8 +344,8 @@ heading(n,wikitext) = seq(
     combine=true, 
     transform = (v,i) -> Line{NamedString, LineContent}([ NamedString(:headline,intern(string(n))) ] , v[2]))
 
-export wikitext, valid_html_tags
-function wikitext(;namespace = "wikt:de")
+export wikitoken, wikitext, valid_html_tags
+function wikitoken(;namespace = "wikt:de")
     anyhtmltag=Regex("^(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
     wikitext=alt(
         LineContent,
@@ -416,7 +416,9 @@ function wikitext(;namespace = "wikt:de")
     for p in simple_tokens
         push!(wikitext, p)
     end
-
+    wikitext
+end
+function wikitext(;namespace = "wikt:de")
     function append_textblock_token(r, v, nl)
         if v !== missing
             if nl !== missing
