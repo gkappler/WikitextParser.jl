@@ -358,15 +358,6 @@ function wikitoken(;namespace = "wikt:de")
         seq(TokenPair{Symbol,Vector{Token}},
             r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
             transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), v[2]))
-            ),
-        seq(Node{Line{NamedString,AbstractToken}},
-            "<",
-            # 2
-            seq(opt(wdelim),anyhtmltag,opt(wdelim); transform=2), 
-            # 4
-            attributes,
-            "/>";
-            transform = (v,i) -> Node(intern(v[2]),v[3], Line{NamedString,AbstractToken}[])
             )
     )
     wikilink = wiki_link(wikitext;namespace = namespace)    
@@ -383,9 +374,9 @@ function wikitoken(;namespace = "wikt:de")
     
     push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
     push!(wikitext, html(Line{NamedString,AbstractToken},
-                             anyhtmltag,
-                             until -> seq(lines_stop(wikitext; until= until), until; transform=1)
-                             ))
+                         anyhtmltag) do until
+          seq(lines_stop(wikitext; until= until), until; transform=1)
+          end)
 
     push!(wikitext,wikilink);
 
