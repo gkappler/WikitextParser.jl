@@ -315,7 +315,7 @@ function wiki_template(wikitext, x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*
             seq(Pair{String, Paragraph{NamedString,LineContent}},
                 opt(newline),
                 "|",
-                opt(key_parser,"="; default="", transform_seq=1),
+                opt(r"^[ \t\n\r]*",key_parser,"="; default="", transform_seq=2),
                 lines_stop(wikitext; until=alt("|","}}")),
                 opt(newline);
                 ## todo: in parser have default option to intern string during building instance
