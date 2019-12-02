@@ -314,7 +314,7 @@ function wiki_expression(wikitext, key_parser=r"^[-[:alnum:]. _,*]*")
         alternate(
             seq(Pair{String, Paragraph{NamedString,LineContent}},
                 opt(key_parser,"="; default="", transform_seq=1),
-                lines_stop(wikitext; until=alt("|","}}")),
+                lines_stop(wikitext; until=alt("|","}")),
                 opt(newline);
                 ## todo: in parser have default option to intern string during building instance
                 transform = (v,i) -> intern(v[1]) => v[2]),
@@ -346,8 +346,8 @@ function template_parameter(wikitext)
     seq(
         TemplateParameter,
         "{{{",
-        rep_stop(wikitext,alt("|","}}}")),
-        opt(seq("|", lines_stop(wikitext,until="}}}");
+        rep_stop(wikitext,alt("|","}")),
+        opt(seq("|", lines_stop(wikitext,until="}");
                 transform=2)),
         "}}}"; 
         transform=(v,i) -> TokenPair(v[2],v[3]))
