@@ -124,59 +124,75 @@ wiki_parentheses = Dict{Any,Any}(
 )
 
 import ParserAlchemy: regex_tempered_greedy
-import ParserAlchemy.Tokens: enum_label, quotes
+import ParserAlchemy.Tokens: enum_label, quotes, attribute_parser
 
-function table_cell_parser(node="td",
-                           inner=instance(Vector{String},(v,i)->String[v],FullText()))
-    seq(Node{eltype(result_type(inner))},
-        r" *",
-        opt( seq( attributes,
-                  ## ignore dummy format, e.g. ''formatting''
-                  r"^[^\|\n!]*\|(?![\|])"; transform=1)),
-        regex_neg_lookahead(r"\|\||!!|\n *(?:\||!)");
-        transform=(v,i) -> Node(node, v[2],
-            tokenize(inner,v[3])))
+function table_cell_parser(inner_word::TextParse.AbstractToken{<:AbstractToken}, node="td")
+    A = result_type(inner_word)
+    T = Line{NamedString,A}
+    table_delim = alt("!", "|")
+    inner = lines_stop(inner_word; until=table_delim)
+    seq(Node{A,T},
+        opt(seq( rep( seq(NegativeLookahead(alt(newline,"|")),
+                      alt(attribute_parser, inner_word);
+                      transform=2)),
+             ## ignore dummy format, e.g. ''formatting''
+             seq("|", NegativeLookahead("|"); transform=1);
+                 transform=1)),
+        (
+            ## ParserPeek("Content may either follow its cell mark on the same line (after any optional HTML attributes); ",10,
+            rep_stop(inner_word,
+                     alt("||","!!")))
+        ## ; transform=(v,i) -> Node{A,T}(node, v[1], [Line(v[2])]))
+        ## https://en.wikipedia.org/wiki/Help:Table
+        , opt( (
+            ## ParserPeek("or on lines below the cell mark. Content that uses wiki markup that itself needs to start on a new line, such as with lists, headings, or nested tables, must be on its own new line.",10,
+                       seq(newline, NegativeLookahead(table_delim), inner; transform=3)))
+        , rep(newline)
+        ; transform=(v,i) -> Node{A,T}(node, v[1], T[ Line(v[2]), v[3]... ]))
 end
 
-function table_cell_parsers(inner=instance(Vector{String},(v,i)->String[v],FullText()))
-    seq(Vector{Node{eltype(result_type(inner))}},
-        alt(seq("!",table_cell_parser("th",inner), transform=2),
-            seq(r"\|(?![-}])",table_cell_parser("td",inner), transform=2)),
+function table_cell_parsers(inner_word)
+    A = result_type(inner_word)
+    T = Line{NamedString,A}
+    seq(Vector{Node{A,T}},
+        alt(seq("!",table_cell_parser(inner_word, "th"), transform=2),
+            seq(r"\|(?![-}])",table_cell_parser(inner_word, "td"), transform=2)),
         rep(
-            alt(seq("!!",table_cell_parser("th",inner), transform=2),
-                seq("||",table_cell_parser("td",inner), transform=2))),
+            alt(seq("!!",table_cell_parser(inner_word, "th"), transform=2),
+                seq("||",table_cell_parser(inner_word, "td"), transform=2))),
     transform=(v,i)->pushfirst!(v[2],v[1]))
 end
 
-function table_parser(inner=instance(Vector{String},(v,i)->String[v],FullText()))
+
+
+function table_parser(inner_word)
     ## N = Node{Node{eltype(result_type(inner))}}
     N = AbstractToken
-    seq(Node{N},
-        "{|", tok(inline,attributes), newline,
+    seq(Node{AbstractToken,N},
+        "{|", rep(alt(attribute_parser, inner_word)),newline,
         # 4
-        opt(seq("|+", tok(inline,inner), newline; transform=2, log=false)),
+        opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false)),
         # 5 
-        alternate(
-            table_cell_parsers(inner),newline),
+        rep(table_cell_parsers(inner_word)),
         rep(seq(N,
                 r"\|-+", tok(inline,attributes), newline,
-                alternate(table_cell_parsers(inner),newline);
-                transform=(v,i) -> Node{AbstractToken}("tr", v[2], vcat(v[4]...)));
+                rep(table_cell_parsers(inner_word));
+                transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[4]...)));
             log=false),
         ##r".*"s,
         rep(whitenewline),
         "|}",
-        ; partial=true, log=false,
+        ; ## partial=true, log=true,
         transform=(v,i) -> begin
         if !isempty(v[5])
         pushfirst!(v[6],
-              Node("tr", [], vcat(v[5]...)))
+              Node("tr", AbstractToken[], vcat(v[5]...)))
         end
         if !isempty(v[4])
         pushfirst!(v[6],
-              Node("caption", [], vcat(v[4]...)))
+              Node("caption", AbstractToken[], vcat(v[4]...)))
         end
-        Node{N}("table",v[2], v[6])
+        Node{AbstractToken,N}("table",v[2], v[6])
         end)
 end
 
@@ -271,25 +287,6 @@ lines_stop(wikitext;until) =
         end
     );
 
-
-function wiki_table(x=r"[^}{\|]+")
-    seq(
-        TokenPair,
-        "{|",
-        ##rows
-        alternate(    
-            rep( alt(
-                opt(newline),
-                "|",
-                opt(key_parser,"="; default="", transform_seq=1),
-                lines_stop(until="|");
-                ## todo: in parser have default option to intern string during building instance
-                transform = (v,i) -> intern(v[3]) => v[4]),
-                 r"^ *\|- *"*newline),
-            opt(newline),
-            "|}"; 
-            transform=(v,i) -> Template((v[2]),v[3])))
-end
 
 function wiki_expression(wikitext, key_parser=r"^[-[:alnum:]. _,*]*")
     seq(
