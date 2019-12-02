@@ -355,17 +355,18 @@ heading(n,wikitext) = seq(
 
 export wikitoken, wikitext, valid_html_tags
 function wikitoken(;namespace = "wikt:de")
+    newlinetoken = instance(Token,newline,:delimiter)
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
         bracket_reference,
         seq(TokenPair{Symbol,Vector{Token}},
             r"<nowiki>"i, regex_neg_lookahead(r"</nowiki>"i,r"(?:.|[\n])"), r"</nowiki>"i;
-            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...)), v[2]))
+            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
             ),
         seq(TokenPair{Symbol,Vector{Token}},
             r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
-            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...)), v[2]))
+            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
             )
     )
     wikilink = wiki_link(wikitext;namespace = namespace)    
@@ -398,7 +399,7 @@ function wikitoken(;namespace = "wikt:de")
 
     push!(wikitext,table_parser(wikitext));
 
-    push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,instance(Token,newline,:delimiter))))
+    push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,newlinetoken)))
 
     push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
 ##    push!(wikitext, parenthesisP(:bracket))
