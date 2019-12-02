@@ -581,7 +581,7 @@ function parse_overview(namespace, w, t::Template)
                                r"([[:alpha:]]+) ([[:alpha:]]*) ?Übersicht ?(.*)?(?:\r?\n)*";
                                )
     language, wordtype, genus = tokenize(overview_parser, t.template)
-    args = Pair{String,Token}[]
+    args = Pair{String,AbstractToken}[]
     for (i,a) in enumerate(t.arguments)
         # if !(length(a.second) == 2 && length(a.second[1].tokens)==2)
         #     dump(a)
