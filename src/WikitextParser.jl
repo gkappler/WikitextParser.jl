@@ -168,15 +168,21 @@ end
 function table_parser(inner_word)
     ## N = Node{Node{eltype(result_type(inner))}}
     N = AbstractToken
+    inner_partial_html = alt(
+        html(Line{NamedString,AbstractToken},
+             anyhtmltag) do until
+        seq(lines_stop(inner_word; until = alt("||","!!",until)), opt(until); transform=1)
+        end,
+        inner_word)
     seq(Node{AbstractToken,N},
         "{|", rep(alt(attribute_parser, inner_word)),newline,
         # 4
         opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false)),
         # 5 
-        rep(table_cell_parsers(inner_word)),
+        rep(table_cell_parsers(inner_partial_html)),
         rep(seq(N,
                 r"\|-+", tok(inline,attributes), newline,
-                rep(table_cell_parsers(inner_word));
+                rep(table_cell_parsers(inner_partial_html));
                 transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[4]...)));
             log=false),
         ##r".*"s,
@@ -232,7 +238,7 @@ valid_html_tags = (
     ref = [ "ref", "references" ],
     transclusiontags = [ "noinclude", "onlyinclude", "includeonly" ]
 )
-
+anyhtmltag=Regex("^(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
 
 
 wiki_list(wikitext;until) = seq(
@@ -346,7 +352,6 @@ heading(n,wikitext) = seq(
 
 export wikitoken, wikitext, valid_html_tags
 function wikitoken(;namespace = "wikt:de")
-    anyhtmltag=Regex("^(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
