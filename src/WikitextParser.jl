@@ -418,6 +418,7 @@ function wikitext(;namespace = "wikt:de")
         end
         push!(r,v)
     end
+    wikitext=wikitoken(;namespace=namespace)
     textblock = alternate(
         vcat([ heading(level, wikitext) for level in reverse(1:6) ], wiki_lines(wikitext;until=Never())),
         emptyline; 
