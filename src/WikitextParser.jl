@@ -581,6 +581,21 @@ function prepend_prefix!(v::Vector{<:Line},y)
     filter!(t -> !isempty(t.tokens), v)
 end
 
+function parse_overview(namespace, w, t::Nothing)
+    ## language = v.word[1].tokens[3],
+    ## @show w,t
+    images = Line{NamedString,LineContent}[]
+    inflections = Token[]
+    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[1])[1].arguments[1].second), "",""
+    ( word = Token(namespace, intern(trimstring(
+        join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
+      language = Token(:language,language),
+      wordtype = Token(:wordtype,wordtype),
+      inflections = inflections,
+      images = images,
+      wikitext = [ w[1], w[2]... ] )
+end
+
 function parse_overview(namespace, w, t::Template)
     ## language = v.word[1].tokens[3],
     images = Line{NamedString,LineContent}[]
@@ -626,13 +641,13 @@ function parse_overview(namespace, w, t::Template)
       wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
       images = images,
-      wikitext = [ Line(LineContent[t]) ] )
+      wikitext = [ w[1], w[2]..., Line(LineContent[t]) ] )
 end
 
 
       
 function parse_overview(namespace, w,v::Vector{<:Line})
-    parse_overview(namespace, w,isempty(v) ? Template("NoLanguage NoWordType Übersicht") : v[1].tokens[1])
+    parse_overview(namespace, w,isempty(v) ? nothing : v[1].tokens[1])
 end
 
 wiktionary_de_content=[
