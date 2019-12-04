@@ -177,7 +177,8 @@ sloppyhtml(inner_token; stop=tuple()) =
             ),
         html(Line{NamedString,AbstractToken},
              anyhtmltag) do until
-        seq(lines_stop(inner_token; until= alt(stop...,until)), until; transform=1)
+        seq(lines_stop(inner_token; until= alt(stop...,until)),
+            opt(until); transform=1)
         end)
 
 function table_parser(inner_word)
@@ -327,14 +328,14 @@ function wiki_template(wikitext, x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*
     seq(
         Template{NamedString,LineContent},
         "{{",
-        ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}}"))) :
+        ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}"))) :
           x ),
         rep_until(
             seq(Pair{String, Paragraph{NamedString,LineContent}},
                 opt(newline),
                 "|",
                 opt(r"^[ \t\n\r]*",key_parser,"="; default="", transform_seq=2),
-                lines_stop(wikitext; until=alt("|","}}")),
+                lines_stop(wikitext; until=alt("|","}")),
                 opt(newline);
                 ## todo: in parser have default option to intern string during building instance
                 transform = (v,i) -> intern(v[3]) => v[4]),
@@ -347,7 +348,7 @@ function template_parameter(wikitext)
         TemplateParameter,
         "{{{",
         rep_stop(wikitext,alt("|","}")),
-        opt(seq("|", lines_stop(wikitext,until="}");
+        opt(seq("|", lines_stop(wikitext,until=alt("|","}"));
                 transform=2)),
         "}}}"; 
         transform=(v,i) -> TokenPair(v[2],v[3]))
@@ -374,7 +375,6 @@ function wikitoken(;namespace = "wikt:de")
         bracket_number, ## todo: make a line type? see ordo [5]a-c
         bracket_reference
     )
-    wikilink = wiki_link(wikitext;namespace = namespace)    
 
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
@@ -388,7 +388,7 @@ function wikitoken(;namespace = "wikt:de")
     push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
     push!(wikitext, sloppyhtml(wikitext))
 
-    push!(wikitext,wikilink);
+    push!(wikitext, wiki_link(wikitext;namespace = namespace));
 
     push!(wikitext,instance(Token, (v,i) -> Token(:ellipsis,v),
                                 Regex("^"*regex_string("[…]"))))
