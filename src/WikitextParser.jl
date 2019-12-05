@@ -360,7 +360,7 @@ heading(n,wikitext) = seq(
     Regex("^={$n,$n} *"),
     rep_until(wikitext,
               seq(Regex("^ *={$n,$n}"), NegativeLookahead("="))),
-    rep(wikitext); ## comments sometimes follow
+    rep_stop(wikitext, newline); ## comments sometimes follow
     transform = (v,i) -> Line{NamedString, LineContent}(
         [ NamedString(:headline,intern(string(n))) ],
         ##(@show v[2])))
@@ -368,23 +368,31 @@ heading(n,wikitext) = seq(
 
 newlinetoken = instance(Token,newline,:delimiter)
 
+htmlescape = instance(Token, r"^&(?:[[:alpha:]]+|#[[:digit:]]+);"i, :htmlescape)
 export wikitoken, wikitext, valid_html_tags
 function wikitoken(;namespace = "wikt:de")
     wikitext=alt(
         LineContent,
         bracket_number, ## todo: make a line type? see ordo [5]a-c
-        bracket_reference
+        bracket_reference,
+        seq(TokenPair{Symbol, Vector{Token}},
+            rep1(seq(word, "·"; transform=1)), word,
+            transform = (v,i) -> TokenPair(:hyphenation, Token[Token(:syllable,x)
+                                                               for x in ( v[1]..., v[2]) ]))
     )
 
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
-        instance(Token, r"^&[[:alpha:]]+;"i, :htmlescape)
+        htmlescape
     ]
         push!(wikitext, p)
     end
 
     inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
+
+
     
+    ## push!(wikitext, parenthesisTempered(:link, r"^(?:https?|ftp).*", "[","]"))
     push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
     push!(wikitext, sloppyhtml(wikitext))
 
@@ -411,12 +419,13 @@ function wikitoken(;namespace = "wikt:de")
     push!(wikitext, parenthesisTempered(:bold, rep(wikitext)))
     push!(wikitext, parenthesisTempered(:italics, rep(wikitext)))
 ##    push!(wikitext, parenthesisP(:squote))
-##    push!(wikitext, parenthesisP(:german_quote))
 ##    push!(wikitext, parenthesisP("'''"))
+    push!(wikitext, parenthesisP(:german_quote, wikitext))
 
     for p in simple_tokens
         push!(wikitext, p)
     end
+    push!(wikitext, instance(Token, r".", :unknown))
     wikitext
 end
 function wikitext(;namespace = "wikt:de")
