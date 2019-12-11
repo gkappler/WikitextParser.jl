@@ -136,7 +136,7 @@ function table_cell_parser(inner_word::TextParse.AbstractToken{<:AbstractToken},
         (
             ## ParserPeek("Content may either follow its cell mark on the same line (after any optional HTML attributes); ",10,
             rep_stop(inner_word,
-                     alt("||","!!")))
+                     alt("\n","||","!!")))
         ## ; transform=(v,i) -> Node{A,T}(node, v[1], [Line(v[2])]))
         ## https://en.wikipedia.org/wiki/Help:Table
         , opt( (
@@ -183,12 +183,15 @@ function table_parser(inner_word)
         sloppyhtml(inner_word, stop=("|","!")),
         inner_word)
     seq(Node{AbstractToken,N},
-        "{|", rep(alt(attribute_parser, inner_word)),newline,
+        "{|"
+        , rep_until(
+            alt(attribute_parser, inner_word)
+            ,newline)
         # 4
-        opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false)),
+        , opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false))
         # 5 
-        rep(table_cell_parsers(inner_partial_html)),
-        rep(seq(N,
+        , rep(table_cell_parsers(inner_partial_html))
+        , rep(seq(N,
                 r"\|-+", tok(inline,attributes), newline,
                 rep(table_cell_parsers(inner_partial_html));
                 transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[4]...)));
@@ -198,15 +201,15 @@ function table_parser(inner_word)
         "|}",
         ; ## partial=true, log=true,
         transform=(v,i) -> begin
-        if !isempty(v[5])
-        pushfirst!(v[6],
-              Node("tr", AbstractToken[], vcat(v[5]...)))
-        end
         if !isempty(v[4])
-        pushfirst!(v[6],
-              Node("caption", AbstractToken[], vcat(v[4]...)))
+        pushfirst!(v[5],
+              Node("tr", AbstractToken[], vcat(v[4]...)))
         end
-        Node{AbstractToken,N}("table",v[2], v[6])
+        if !isempty(v[3])
+        pushfirst!(v[5],
+              Node("caption", AbstractToken[], vcat(v[3]...)))
+        end
+        Node{AbstractToken,N}("table",v[2], v[5])
         end)
 end
 
