@@ -62,11 +62,6 @@ list_item = instance(
 
 # URL_re = raw"(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
 
-wiki_external_link =
-    instance(Token,
-             (v,i) -> Token(:link,intern(v[1])),
-             r"^\[((?:https?|ftp)[^][]+)\]"
-             );
 
 
 export substnothing
@@ -381,6 +376,10 @@ function wikitoken(;namespace = "wikt:de")
                                                                for x in ( v[1]..., v[2]) ]))
     )
 
+    wikitokens = alt(
+        simple_tokens...,
+        instance(Token, r".", :unknown))
+    
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
         htmlescape
@@ -393,13 +392,29 @@ function wikitoken(;namespace = "wikt:de")
 
     
     ## push!(wikitext, parenthesisTempered(:link, r"^(?:https?|ftp).*", "[","]"))
-    push!(wikitext, instance(Token, r"^(?:https?|ftp)://[-[:alpha:][:digit:]?=&#+\./_%]*", :link))
+    linkparser = instance(TokenPair{Symbol,Vector{Token}},
+                          (v,i) -> begin
+                          query = v[3] === nothing ? Token[] : tokenize(rep(wikitokens), v[3])
+                          TokenPair(:link, Token[ Token(:protocol, v[1]),
+                                                  delim"://",
+                                                  Token(:domain, v[2]),
+                                                  query... ])
+                          end,
+                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%]+)(/[-[:alpha:][:digit:]?=&#+\./_%]*)?")
+    push!(wikitext, linkparser)
     push!(wikitext, sloppyhtml(wikitext))
 
     push!(wikitext, wiki_link(wikitext;namespace = namespace));
 
     push!(wikitext,instance(Token, (v,i) -> Token(:ellipsis,v),
-                                Regex("^"*regex_string("[…]"))))
+                            Regex("^"*regex_string("[…]"))))
+    
+    wiki_external_link = instance(
+        TokenPair,
+        (v,i) -> tokenize(linkparser,v[1]), ## todo: v[2] label
+        r"^\[((?:https?|ftp)[^][ ]+)?( [^][]*)?\]"
+    )
+
     push!(wikitext,wiki_external_link);
 
     push!(wikitext,template_parameter(wikitext));
@@ -421,11 +436,7 @@ function wikitoken(;namespace = "wikt:de")
 ##    push!(wikitext, parenthesisP(:squote))
 ##    push!(wikitext, parenthesisP("'''"))
     push!(wikitext, parenthesisP(:german_quote, wikitext))
-
-    for p in simple_tokens
-        push!(wikitext, p)
-    end
-    push!(wikitext, instance(Token, r".", :unknown))
+    push!(wikitext, wikitokens)
     wikitext
 end
 function wikitext(;namespace = "wikt:de")
@@ -595,7 +606,7 @@ function parse_overview(namespace, w, t::Nothing)
     ## language = v.word[1].tokens[3],
     ## @show w,t
     images = Line{NamedString,LineContent}[]
-    inflections = Token[]
+    inflections = Pair{String,Token}[]
     language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[1])[1].arguments[1].second), "",""
     ( word = Token(namespace, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
@@ -609,7 +620,7 @@ end
 function parse_overview(namespace, w, t::Template)
     ## language = v.word[1].tokens[3],
     images = Line{NamedString,LineContent}[]
-    inflections = Token[]
+    inflections = Pair{String, Token}[]
     overview_parser = instance(Vector{String},
                                (v,i) -> String[intern(v[1]),intern(v[2]),v[3]===nothing ? "" : intern(v[3])],
                                r"([[:alpha:]]+) ([[:alpha:]]*) ?Übersicht ?(.*)?(?:\r?\n)*";
@@ -631,7 +642,7 @@ function parse_overview(namespace, w, t::Template)
             elseif a.first in ["Genus"]
                 push!(args, a.first => val)
             else
-                push!(inflections, Token(a.first,string(val)))
+                push!(inflections, a.first => Token(:literal,string(val)))
                 # imp = tokenize(
                 #     r"^([^[:digit:]]+|[[:digit:]]\. Person) *([[:digit:]]*)",
                 #     a.first)
