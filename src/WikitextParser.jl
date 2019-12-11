@@ -403,7 +403,7 @@ function wikitoken(;namespace = "wikt:de")
                                                   Token(:domain, v[2]),
                                                   query... ])
                           end,
-                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%]+)(/[-:,;~\$[:alpha:][:digit:]?=&#+\./_%]*)?")
+                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%]+)(/[-:,;~\$\p{L}[:digit:]?=&#+\./_%]*)?")
     push!(wikitext, linkparser)
     push!(wikitext, sloppyhtml(wikitext))
 
@@ -415,7 +415,7 @@ function wikitoken(;namespace = "wikt:de")
     wiki_external_link = instance(
         TokenPair,
         (v,i) -> tokenize(linkparser,v[1]), ## todo: v[2] label
-        r"^\[((?:https?|ftp)[^][ ]+)?( [^][]*)?\]"
+        r"^\[((?:https?|ftp)[^][ ]+)( [^][]*)?\]"
     )
 
     push!(wikitext,wiki_external_link);
