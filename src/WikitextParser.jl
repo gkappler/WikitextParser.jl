@@ -400,7 +400,7 @@ function wikitoken(;namespace = "wikt:de")
                                                   Token(:domain, v[2]),
                                                   query... ])
                           end,
-                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%]+)(/[-[:alpha:][:digit:]?=&#+\./_%]*)?")
+                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%]+)(/[-:,;~\$[:alpha:][:digit:]?=&#+\./_%]*)?")
     push!(wikitext, linkparser)
     push!(wikitext, sloppyhtml(wikitext))
 
