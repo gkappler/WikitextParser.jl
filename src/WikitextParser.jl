@@ -106,7 +106,7 @@ end
 wiki_link(wikitext;namespace = "wikt:de") =
     instance(
         WikiLink,
-        (v,i) -> WikiLink(substnothing(namespace,v[1]),
+        (v,i) -> WikiLink(substnothing("literal",v[1]),
                           (substnothing.("",v[2:end]))...),
         r"^\[\[(?:([^][\|#]*):)?([^][\|#:]*)(?:#([^][\|#]+))?(?:\|([^][]+))?\]\]([[:alpha:]]+)?"
     )
