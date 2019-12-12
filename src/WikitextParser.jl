@@ -69,32 +69,33 @@ substnothing(default, x) =
     x === nothing ? default : x
 
 export WikiLink
-struct WikiLink <: AbstractToken
-    namespace_page::Token
-    anchor::String
-    label::String
+struct WikiLink <: AbstractToken ## todo: make Tokens String, in token_lines make tokens with name=field 
+    namespace::Token
+    page::Token
+    anchor::Token
+    label::Token
     function WikiLink(namespace::AbstractString, page::AbstractString, anchor::AbstractString, label::AbstractString, addlabel="")
-        new(Token(intern(namespace), intern(page)), intern(anchor),
-            intern((label=="" ? page : label) * addlabel))
+        new(Token(:namespace,intern(namespace)), Token(:literal,intern(page)), Token(:anchor,intern(anchor)),
+            Token(:literal, intern(label=="" ? page : label) * addlabel))
     end
-    function WikiLink(namespace_page::Token, anchor::String, label::String)
-        new(namespace_page, anchor, label)
+    function WikiLink(namespace::Token, page::Token, anchor::Token, label::Token)
+        new(namespace, page, anchor, label)
     end
 end
-function BasePiracy.construct(::Type{WikiLink}; namespace_page, anchor, label)
-    WikiLink(namespace_page, anchor, label)
+function BasePiracy.construct(::Type{WikiLink}; namespace, page, anchor, label)
+    WikiLink(namespace, page, anchor, label)
 end
 
 
 Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
-    print(io, "[[", name(x.namespace_page) == "" ? "" : value(x.namespace) * ":",
+    print(io, "[[", value(x.namespace) == "" ? "" : value(x.namespace) * ":",
           x.page,
           x.anchor == "" ? "" : "#" * x.anchor,
           x.label == "" ? "" : "|" * x.label,
           "]]")
 
 Base.show(io::IO, x::WikiLink) =
-          printstyled(io, x.label=="" ? value(x.namespace_page) : x.label; bold=true,
+          printstyled(io, value(x.label)=="" ? value(x.page) : value(x.label); bold=true,
                       color=36)
 
 export @substringorempty
@@ -412,13 +413,13 @@ function wikitoken(;namespace = "wikt:de")
     push!(wikitext,instance(Token, (v,i) -> Token(:ellipsis,v),
                             Regex("^"*regex_string("[…]"))))
     
-    wiki_external_link = instance(
-        TokenPair,
-        (v,i) -> tokenize(linkparser,v[1]), ## todo: v[2] label
-        r"^\[((?:https?|ftp)[^][ ]+)( [^][]*)?\]"
-    )
+    # wiki_external_link = instance(
+    #     TokenPair,
+    #     (v,i) -> tokenize(linkparser,v[1]), ## todo: v[2] label
+    #     r"^\[((?:https?|ftp)[^][ ]+)( [^][]*)?\]"
+    # )
 
-    push!(wikitext,wiki_external_link);
+    ## push!(wikitext,wiki_external_link);
 
     push!(wikitext,template_parameter(wikitext));
     push!(wikitext,wiki_expression(wikitext));
@@ -429,7 +430,7 @@ function wikitoken(;namespace = "wikt:de")
     push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,newlinetoken)))
 
     push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
-##    push!(wikitext, parenthesisP(:bracket))
+    push!(wikitext, parenthesisP(:bracket, wikitext))
 ##    push!(wikitext, parenthesisP(:curly))
 ##    push!(wikitext, parenthesisP(:angle))
 ##    push!(wikitext, parenthesisP(:quote))
@@ -611,7 +612,7 @@ function parse_overview(namespace, w, t::Nothing)
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String,Token}[]
     language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[1])[1].arguments[1].second), "",""
-    ( word = Token(namespace, intern(trimstring(
+    ( word = Token(:literal, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
@@ -659,7 +660,7 @@ function parse_overview(namespace, w, t::Template)
             end
         end
     end
-    ( word = Token(namespace, intern(trimstring(
+    ( word = Token(:literal, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
