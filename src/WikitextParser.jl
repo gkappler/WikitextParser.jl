@@ -624,8 +624,8 @@ function parse_overview(namespace, w, t::Template)
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String, Token}[]
     overview_parser = instance(Vector{String},
-                               (v,i) -> String[intern(v[1]),intern(v[2]),v[3]===nothing ? "" : intern(v[3])],
-                               r"([-\p{L}]+) +(.*[^ ]) *Übersicht *(.*)?(?:\r?\n)*";
+                               (v,i) -> String[intern(v[1]),intern(substnothing("",v[2])),v[3]===nothing ? "" : intern(v[3])],
+                               r"([-\p{L}]+) +(.*[^ ])? *Übersicht *(.*)?(?:\r?\n)*";
                                )
     language, wordtype, genus = tokenize(overview_parser, t.template)
     args = Pair{String,AbstractToken}[]
