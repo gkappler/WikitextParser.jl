@@ -183,19 +183,17 @@ function table_parser(inner_word)
     inner_partial_html = alt(
         sloppyhtml(inner_word, stop=("|","!")),
         inner_word)
+    attr_line = rep_until(alt(attribute_parser, inner_word),newline)
     seq(Node{AbstractToken,N},
-        "{|"
-        , rep_until(
-            alt(attribute_parser, inner_word)
-            ,newline)
+        "{|", attr_line
         # 4
         , opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false))
         # 5 
         , rep(table_cell_parsers(inner_partial_html))
         , rep(seq(N,
-                r"\|-+", tok(inline,attributes), newline,
+                r"\|-+", attr_line,
                 rep(table_cell_parsers(inner_partial_html));
-                transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[4]...)));
+                transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[3]...)));
             log=false),
         ##r".*"s,
         rep(whitenewline),
