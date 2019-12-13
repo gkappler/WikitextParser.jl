@@ -609,7 +609,7 @@ function parse_overview(namespace, w, t::Nothing)
     ## @show w,t
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String,Token}[]
-    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[1])[1].arguments[1].second), "",""
+    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[end])[1].arguments[1].second), "",""
     ( word = Token(:literal, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
       language = Token(:language,language),
