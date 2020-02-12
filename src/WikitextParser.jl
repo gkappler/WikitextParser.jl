@@ -103,7 +103,8 @@ macro substringorempty(x,range)
     :( $(esc(x)) === nothing ? "" : $(esc(x))[$(esc(range))] )
 end
 
-wiki_link(wikitext;namespace = "wikt:de") =
+
+wiki_link(token;namespace = "wikt:de") =
     instance(
         WikiLink,
         (v,i) -> WikiLink(substnothing("literal",v[1]),
@@ -286,6 +287,7 @@ function parenthesisP(name::Symbol, wikitext, open::String, close=open)
         open, rep_until(wikitext, close);
         transform=(v,i) -> TokenPair(name,v[2]))
 end
+
 function parenthesisP(name::Symbol, wikitext)
     parenthesisP(name, wikitext, wiki_parentheses[name]...)
 end
@@ -604,23 +606,10 @@ function prepend_prefix!(v::Vector{<:Line},y)
     filter!(t -> !isempty(t.tokens), v)
 end
 
-function parse_overview(namespace, w, t::Nothing)
+
+function parse_overview(namespace, title, w, t::Template)
     ## language = v.word[1].tokens[3],
     ## @show w,t
-    images = Line{NamedString,LineContent}[]
-    inflections = Pair{String,Token}[]
-    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[end])[1].arguments[1].second), "",""
-    ( word = Token(:literal, intern(trimstring(
-        join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
-      language = Token(:language,language),
-      wordtype = Token(:wordtype,wordtype),
-      inflections = inflections,
-      images = images,
-      wikitext = [ w[1], w[2]... ] )
-end
-
-function parse_overview(namespace, w, t::Template)
-    ## language = v.word[1].tokens[3],
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String, Token}[]
     overview_parser = instance(Vector{String},
@@ -660,6 +649,7 @@ function parse_overview(namespace, w, t::Template)
     end
     ( word = Token(:literal, intern(trimstring(
         join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
+      title = Token(:literal,title), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
@@ -669,8 +659,8 @@ end
 
 
       
-function parse_overview(namespace, w,v::Vector{<:Line})
-    parse_overview(namespace, w,isempty(v) ? nothing : v[1].tokens[1])
+function parse_overview(namespace, title, w, v::Vector{<:Line})
+    parse_overview(namespace, title, w, isempty(v) ? nothing : v[1].tokens[1])
 end
 
 wiktionary_de_content=[
@@ -732,7 +722,7 @@ number_line = seq(Pair{String,Vector{LineContent}},
 
 
 export wiki_meaning
-function wiki_meaning(v;namespace = "wikt:de")
+function wiki_meaning(title,v;namespace = "wikt:de")
     L = Line{NamedString,LineContent}
     getval(val,p) =  p => ( ( haskey(val,p) && val[p]!==missing ) ? val[p] : L[] )
     fields = [ x.second[1] for x in wiktionary_de_content ]
@@ -757,7 +747,6 @@ function wiki_meaning(v;namespace = "wikt:de")
             lastnum = "?"
             for e in x
                 num = e.first=="?" ? lastnum : e.first
-
                 let is = tokenize(expand_numbers,InternedStrings.intern(num); partial=nothing)
                     if is === nothing
                         pushit(num,k,e.second)
@@ -784,8 +773,9 @@ function wiki_meaning(v;namespace = "wikt:de")
             end
         end
         val = get(meaning_data,"?",Dict())
-        base = parse_overview(namespace, v.word,getval(val,:overview).second)
-        meanings = [ ( word=base.word, order=m,
+        base = parse_overview(namespace, title, v.word, getval(val,:overview).second)
+        meanings = [ ( title=base.title
+                       , word=base.word, order=m,
                        ( getval(val,p)
                          for p in fields)... )
                      for (m,val) in pairs(meaning_data)
