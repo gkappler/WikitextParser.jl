@@ -557,9 +557,10 @@ function parse_bz2(f::Function,
                     text = []
                 elseif name in types
                     val = pop!(r)
-                    push!(r[end].second, name => (; val.second...))
+                    push!(r[end].second, name => (; ( Symbol(k.first) => k.second for k in val.second)...))
                 elseif name in record
-                    val = (; pop!(r).second...)
+                    val = pop!(r)
+                    val = (; ( Symbol(k.first) => k.second for k in val.second)...)
                     if !(:title in propertynames(val) &&
                          match(r"Wiktionary:|MediaWiki:",val.title)!==nothing)
                         ## show(results[end])
