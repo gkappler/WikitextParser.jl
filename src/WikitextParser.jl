@@ -606,6 +606,24 @@ function prepend_prefix!(v::Vector{<:Line},y)
     filter!(t -> !isempty(t.tokens), v)
 end
 
+word_string(w) =
+    trimstring(
+        join(string.(filter(t-> !(t isa TokenPair && t.key==:paren), w[1].tokens))))
+
+function parse_overview(namespace, title, w, t::Nothing)
+    ## language = v.word[1].tokens[3],
+    ## @show w,t
+    images = Line{NamedString,LineContent}[]
+    inflections = Pair{String,Token}[]
+    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[end])[1].arguments[1].second), "",""
+    ( word = Token(:literal, intern(word_string(w))),
+      title = Token(:literal, intern(title)), 
+      language = Token(:language,language),
+      wordtype = Token(:wordtype,wordtype),
+      inflections = inflections,
+      images = images,
+      wikitext = [ w[1], w[2]... ] )
+end
 
 function parse_overview(namespace, title, w, t::Template)
     ## language = v.word[1].tokens[3],
@@ -647,9 +665,8 @@ function parse_overview(namespace, title, w, t::Template)
             end
         end
     end
-    ( word = Token(:literal, intern(trimstring(
-        join(string.(filter(t-> t isa Token && variable(t)!=:paren,w[1].tokens)))))),
-      title = Token(:literal,title), 
+    ( word = Token(:literal, intern(intern(word_string(w)))),
+      title = Token(:literal, intern(title)), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
