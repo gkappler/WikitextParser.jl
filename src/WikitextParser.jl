@@ -2,215 +2,195 @@ module WikitextParser
 using Nullables
 using InternedStrings
 
-using ParserAlchemy
-using ParserAlchemy.Tokens
-import ParserAlchemy: inline, newline, whitenewline, whitespace, rep_delim_par, word, footnote, delimiter, indentation, wdelim
-import ParserAlchemy.Tokens: tokenstring, bracket_number, bracket_reference, default_tokens
-import ParserAlchemy.Tokens: html, attributes, simple_tokens
-import ParserAlchemy.Tokens: NamedString, Token
-import ParserAlchemy.Tokens: Node, Template, TokenPair, Line, LineContent, Paragraph
-import ParserAlchemy.Tokens: IteratorParser, is_template_line, is_line, is_heading
-
-
+using CombinedParsers
+import CombinedParsers: Repeat_max
+using CombinedParsers.Regexp
+import CombinedParsers.Regexp: word, whitespace_maybe, whitespace_horizontal
+using CombinedParserTools
+import CombinedParserTools: newline, inline, whitespace_newline, emptyline
+using CombinedParserTools.Tokens
+import CombinedParserTools.Tokens: html, attributes, simple_tokens
 import TextParse
 import TextParse: Numeric
 
-import BasePiracy
-import BasePiracy: construct
 
-int_range = seq(
-    Vector{Int},
-    # 1           # 2       # 3
-    Numeric(Int), r" *(?:–|-) *", Numeric(Int); ## '–' != '-'
-    # use julia `:` syntax to collect UnitRange 
-    transform=(v,i)-> collect(v[1]:v[3]))
+dash = re" *- *"
+@syntax int_range = Sequence(
+    Numeric(Int), # 1
+    dash,    # 2
+    Numeric(Int)  # 3
+) do v
+    v[1]:v[3]
+end;
 
-expand_numbers = seq(
-    Vector{String},"[",
-    alternate(
-        alt(instance(Vector{String},(v,i)->["$x" for x in v], int_range),
-            instance(Vector{String},(v,i)->[v], r"[0-9]+[[:alpha:]]*")),
-        ## regex: allow whitespace
-        r"^ *[,/] *";
-        
-    ), "]";
-    transform=(v,i) -> vcat(v[2]...))
+# Julia Base.collect can be used to convert 
+@syntax int_vector = map(collect, int_range);
 
+# ## Joining numbers and ranges
+@syntax numbers = map(join(
+    Repeat(Either(
+        map(ns -> String[ "$x" for x in ns ],
+            int_vector),
+        map(x  -> String["$x"], Numeric(Int)),
+        !!re"[[:digit:]]+[a-z]"
+    )),
+    re" *, *"
+)) do v
+    vcat(v...)::Vector{<:AbstractString}
+end;
 
-Headline{T} = NamedTuple{(:level, :title), Tuple{Int, T}}
-Base.show(io::IO, v::Type{Headline{T}}) where T = print(io, "Headline{", T, "}")
+# ## Inclusion in a wikitext parser
+# Long and complicated texts like the Wikipedia can be parsed with `CombinedParsers.jl`.
+# The parsers are less pain to write and execute at speeds comparably to PCRE implemented in C, the regular expressions industry standard.
+# `CombinedParsers.jl` can inter-operate with Julia packages `TextParse.jl`.
 
-function Base.show(io::IO, v::Headline{T}) where T
-    print(io,repeat("=", v.level), " ")
-    print(io, v.title)
-    print(io," ", repeat("=", v.level))
-end
+@syntax expand_numbers = Sequence(2,"[",numbers,"]");
 
-Title{S,T} = NamedTuple{(:title, :text), Tuple{S, T}}
-Base.show(io::IO, v::Type{Title{S,T}}) where {S,T} = print(io, "Title{", T, "}")
-function Base.show(io::IO, v::Title{S,T}) where {S,T}
-    println(io,v.title)
-    print(io, v.text)
-end
+include("types.jl")
 
-
-
-list_item = instance(
-    Vector{NamedString},
-    (v,i) -> [NamedString(:list,intern(v[1]))],
-    r"^([*]+|[#]+) *")
+list_item = Sequence(1, !!re"[*]+|[#]+", whitespace_horizontal)
 
 # URL_re = raw"(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
 
 
 
-export substnothing
-substnothing(default, x) =
-    x === nothing ? default : x
 
-export WikiLink
-struct WikiLink <: AbstractToken ## todo: make Tokens String, in token_lines make tokens with name=field 
-    namespace::Token
-    page::Token
-    anchor::Token
-    label::Token
-    function WikiLink(namespace::AbstractString, page::AbstractString, anchor::AbstractString, label::AbstractString, addlabel="")
-        new(Token(:namespace,intern(namespace)), Token(:literal,intern(page)), Token(:anchor,intern(anchor)),
-            Token(:literal, intern(label=="" ? page : label) * addlabel))
+wiki_link(token=AnyChar();namespace = "wikt:de") = 
+    Sequence(
+        "[[",
+        Optional(Sequence(1,!!re"[^][\|#]*",":"); default=namespace),
+        !!Optional(re"[^][\|#:]*"),
+        !!Optional(re"#[^][\|#]+"),
+        Sequence(1,
+                 Optional(Sequence(2,"|"=>"", !!re"[^][]+")),
+                 "]]"),
+        !!re"[[:alpha:]]*"
+    ) do v
+        WikiLink(v[2],
+                 v[3:end]...)
     end
-    function WikiLink(namespace::Token, page::Token, anchor::Token, label::Token)
-        new(namespace, page, anchor, label)
-    end
-end
-function BasePiracy.construct(::Type{WikiLink}; namespace, page, anchor, label)
-    WikiLink(namespace, page, anchor, label)
-end
-
-
-Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
-    print(io, "[[", value(x.namespace) == "" ? "" : value(x.namespace) * ":",
-          x.page,
-          x.anchor == "" ? "" : "#" * x.anchor,
-          x.label == "" ? "" : "|" * x.label,
-          "]]")
-
-Base.show(io::IO, x::WikiLink) =
-          printstyled(io, value(x.label)=="" ? value(x.page) : value(x.label); bold=true,
-                      color=36)
-
-export @substringorempty
-macro substringorempty(x,range)
-    :( $(esc(x)) === nothing ? "" : $(esc(x))[$(esc(range))] )
-end
-
-
-wiki_link(token;namespace = "wikt:de") =
-    instance(
-        WikiLink,
-        (v,i) -> WikiLink(substnothing("literal",v[1]),
-                          (substnothing.("",v[2:end]))...),
-        r"^\[\[(?:([^][\|#]*):)?([^][\|#:]*)(?:#([^][\|#]+))?(?:\|([^][]+))?\]\]([[:alpha:]]+)?"
-    )
-
 
 wiki_parentheses = Dict{Any,Any}(
-    pairs(ParserAlchemy.Tokens.parentheses)...,
+    pairs(CombinedParserTools.Tokens.parentheses)...,
     :italics=>("''","''"),
     :bold=>("'''","'''"),
     :bolditalics=>("''''","''''")
 )
 
-import ParserAlchemy: regex_tempered_greedy
-import ParserAlchemy.Tokens: enum_label, quotes, attribute_parser
+import CombinedParserTools: regex_tempered_greedy
+import CombinedParserTools.Tokens: quotes, attribute_parser
 
 function table_cell_parser(inner_word::TextParse.AbstractToken{<:AbstractToken}, node="td")
-    A = result_type(inner_word)
-    T = Line{NamedString,A}
-    table_delim = alt("!", "|")
+    table_delim = Either("!", "|")
     inner = lines_stop(inner_word; until=table_delim)
-    seq(Node{A,T},
-        opt(seq( rep( seq(NegativeLookahead(alt(newline,"|")),
-                      alt(attribute_parser, inner_word);
-                      transform=2)),
-             ## ignore dummy format, e.g. ''formatting''
-             seq("|", NegativeLookahead("|"); transform=1);
-                 transform=1)),
+    Sequence(
+        Optional(Sequence(
+            1,
+            Repeat( Sequence(
+                2,
+                NegativeLookahead(Either(newline,"|")),
+                Either(attribute_parser, inner_word);
+            )),
+            ## ignore dummy format, e.g. ''formatting''
+            Sequence("|", NegativeLookahead("|")))),
         (
             ## ParserPeek("Content may either follow its cell mark on the same line (after any optional HTML attributes); ",10,
-            rep_stop(inner_word,
-                     alt("\n","||","!!")))
+            Repeat_stop(inner_word,
+                        Either("\n","||","!!")))
         ## ; transform=(v,i) -> Node{A,T}(node, v[1], [Line(v[2])]))
         ## https://en.wikipedia.org/wiki/Help:Table
-        , opt( (
+        , Optional( (
             ## ParserPeek("or on lines below the cell mark. Content that uses wiki markup that itself needs to start on a new line, such as with lists, headings, or nested tables, must be on its own new line.",10,
-                       seq(newline, NegativeLookahead(table_delim), inner; transform=3)))
-        , rep(newline)
-        ; transform=(v,i) -> Node{A,T}(node, v[1], T[ Line(v[2]), v[3]... ]))
+            Sequence(3, newline, NegativeLookahead(table_delim), inner)))
+        , Repeat(newline)) do v
+            Node( node = node, attrs = v[1], children = [ v[2], v[3]... ] )
+        end
 end
 
 function table_cell_parsers(inner_word)
-    A = result_type(inner_word)
-    T = Line{NamedString,A}
-    seq(Vector{Node{A,T}},
-        alt(seq("!",table_cell_parser(inner_word, "th"), transform=2),
-            seq(r"\|(?![-}])",table_cell_parser(inner_word, "td"), transform=2)),
-        rep(
-            alt(seq("!!",table_cell_parser(inner_word, "th"), transform=2),
-                seq("||",table_cell_parser(inner_word, "td"), transform=2))),
-    transform=(v,i)->pushfirst!(v[2],v[1]))
+    Sequence(
+        Either(
+            Sequence(2,"!",table_cell_parser(inner_word, "th")),
+            Sequence(2,re"\|(?![-}])",table_cell_parser(inner_word, "td"))),
+        Repeat(
+            Either(
+                Sequence(2,"!!",table_cell_parser(inner_word, "th")),
+                Sequence(2,"||",table_cell_parser(inner_word, "td"))))) do v
+                    pushfirst!(v[2],v[1])
+                end
 end
 
-
+with_key(key,p) =
+    map(Pair{Symbol,result_type(p)},with_name(key,p)) do v
+        Pair{Symbol,result_type(p)}(key, v)
+    end
 
 sloppyhtml(inner_token; stop=tuple()) =
-    alt(instance(Token, r"^<br */?>"i, :delimiter),
-        seq(TokenPair{Symbol,Vector{Token}},
-            r"<nowiki>"i, regex_neg_lookahead(r"</nowiki>"i,r"(?:.|[\n])"), r"</nowiki>"i;
-            transform=(v,i) -> TokenPair(:nowiki, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
-            ),
-        seq(TokenPair{Symbol,Vector{Token}},
-            r"<pre>"i, regex_neg_lookahead(r"</pre>"i,r"(?:.|[\n])"), r"</pre>"i;
-            transform=(v,i) -> TokenPair(:pre, tokenize(rep(alt(simple_tokens...,newlinetoken)), v[2]))
-            ),
+    Either(
+        instance(Token, !!re"<br */?>"i, :delimiter),
+        Sequence(
+            re"<nowiki>"i,
+            Repeat_until(
+                Either(simple_tokens...,newlinetoken),
+                re"</nowiki>"i
+            )) do v
+        TokenPair(:nowiki, v[2])
+        end,
+        Sequence(
+            re"<pre>"i,
+            Repeat_until(
+                Either(simple_tokens...,newlinetoken),
+                re"</pre>"i
+            )) do v
+        TokenPair(:pre, v[2])
+        end,
         html(Line{NamedString,AbstractToken},
              anyhtmltag) do until
-        seq(lines_stop(inner_token; until= alt(stop...,until)),
-            opt(until); transform=1)
+        Sequence(
+            1,
+            lines_stop(inner_token; until= Either(stop...,until)),
+            Optional(until))
         end)
+
+tok(outer,inner) =
+    map(!outer) do v
+        parse(inner,v)
+    end
 
 function table_parser(inner_word)
     ## N = Node{Node{eltype(result_type(inner))}}
     N = AbstractToken
-    inner_partial_html = alt(
+    inner_partial_html = Either(
         sloppyhtml(inner_word, stop=("|","!")),
         inner_word)
-    attr_line = rep_until(alt(attribute_parser, inner_word),newline)
-    seq(Node{AbstractToken,N},
+    attr_line = Repeat_until(Either(attribute_parser, inner_word),newline)
+    Sequence(
         "{|", attr_line
         # 4
-        , opt(seq("|+", tok(inline,rep(inner_word)), newline; transform=2, log=false))
+        , Optional(Sequence(
+            2, "|+",
+            tok(inline,Repeat(inner_word)),
+            newline))
         # 5 
-        , rep(table_cell_parsers(inner_partial_html))
-        , rep(seq(N,
-                r"\|-+", attr_line,
-                rep(table_cell_parsers(inner_partial_html));
-                transform=(v,i) -> Node{AbstractToken,AbstractToken}("tr", v[2], vcat(v[3]...)));
-            log=false),
-        ##r".*"s,
-        rep(whitenewline),
-        "|}",
-        ; ## partial=true, log=true,
-        transform=(v,i) -> begin
-        if !isempty(v[4])
-        pushfirst!(v[5],
-              Node("tr", AbstractToken[], vcat(v[4]...)))
+        , Repeat(table_cell_parsers(inner_partial_html))
+        , Repeat(
+            Sequence(N,
+                     re"\|-+", attr_line,
+                     Repeat(table_cell_parsers(inner_partial_html))) do v
+            Node{AbstractToken,AbstractToken}("tre", v[2], vcat(v[3]...))
+            end),
+        Repeat(whitespace_newline),
+        "|}") do v
+            if !isempty(v[4])
+                pushfirst!(v[5],
+                           Node("tr", AbstractToken[], vcat(v[4]...)))
+            end
+            if !isempty(v[3])
+                pushfirst!(v[5],
+                           Node("caption", AbstractToken[], vcat(v[3]...)))
+            end
+            Node{AbstractToken,N}("table",v[2], v[5])
         end
-        if !isempty(v[3])
-        pushfirst!(v[5],
-              Node("caption", AbstractToken[], vcat(v[3]...)))
-        end
-        Node{AbstractToken,N}("table",v[2], v[5])
-        end)
 end
 
 export TemplateParameter
@@ -249,33 +229,38 @@ valid_html_tags = (
     ref = [ "ref", "references" ],
     transclusiontags = [ "noinclude", "onlyinclude", "includeonly" ]
 )
-anyhtmltag=Regex("^(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
+anyhtmltag=Regcomb("(?:"*join(sort(unique(vcat(valid_html_tags...)); by=lastindex,rev=true),"|")*")","i")
 
 
-wiki_list(wikitext;until) = seq(
-    Line{NamedString,LineContent},
+# Line{NamedString,LineContent},
+wiki_list(wikitext;until) = Sequence(
     # :indent =>
-    alt(list_item),
+    Either(list_item),
     # :tokens =>
-    rep_stop(wikitext, alt(newline,until));
-    transform = (v,i) -> Line(v[1], v[2]))
+    Repeat_stop(wikitext, Either(newline,until))
+) do v
+    Line(v[1], v[2])
+end
 
-wiki_content(wikitext;until) = seq(
-    Line{NamedString,LineContent},
-    # :indent =>
-    instance(Vector{NamedString},
-             (v,i)-> v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))],
-             r"^:*"),
-    # :tokens =>
-    rep_stop(wikitext,alt(newline,until));
-    transform = (v,i) -> Line(v[1], v[2])
-);
+wiki_content(wikitext;until) =
+    with_name(
+        :content,
+        Sequence(
+            map(re":*") do v
+            v=="" ? NamedString[] : NamedString[NamedString(:whitespace," "^length(v))]
+            end,
+            Repeat_stop(wikitext,Either(newline,until))) do v
+        Line(v[1], v[2])
+        end
+    )
 wiki_lines(wikitext;kw...) = [ wiki_list(wikitext;kw...), wiki_content(wikitext;kw...) ];
 
 function parenthesisTempered(name::Symbol, inner, open, close=open; flags="")
-    instance(TokenPair{Symbol, result_type(inner)},
-             (v,i) -> TokenPair(name, tokenize(inner, v[1])),
-             regex_tempered_greedy(open,close,flags))
+    with_name(name,
+              map(regex_tempered_greedy(open,close,flags)) do v
+              TokenPair(name, parse(inner, v))
+              end
+              )
 end
 
 function parenthesisTempered(name::Symbol,inner;flags="")
@@ -283,9 +268,11 @@ function parenthesisTempered(name::Symbol,inner;flags="")
 end
 
 function parenthesisP(name::Symbol, wikitext, open::String, close=open)
-    seq(TokenPair{Symbol, Vector{LineContent}},
-        open, rep_until(wikitext, close);
-        transform=(v,i) -> TokenPair(name,v[2]))
+    with_name(name,
+              Sequence(# TokenPair{Symbol, Vector{LineContent}},
+                       open, Repeat_until(wikitext, close)) do v
+              TokenPair(name,v[2])
+              end)
 end
 
 function parenthesisP(name::Symbol, wikitext)
@@ -293,96 +280,128 @@ function parenthesisP(name::Symbol, wikitext)
 end
 
 lines_stop(wikitext;until) =
-    alternate(
-        alt(wiki_lines(wikitext,until=until)...), newline;
-        appendf=(r,l,nl) ->
-        if l!==missing
-        if nl !== missing
-        push!(l.tokens,
-              Token(:whitespace, intern(nl)))
-        end
-        push!(r,l)
-        end
+    join(
+        Either(
+            ( w for w in wiki_lines(wikitext,until=until))...
+        ),
+        newline
     );
 
 
-function wiki_expression(wikitext, key_parser=r"^[-[:alnum:]. _,*]*")
-    seq(
-        Template{NamedString,LineContent},
-        "{{#",
-        word,":", opt(whitespace),
-        alternate(
-            seq(Pair{String, Paragraph{NamedString,LineContent}},
-                opt(key_parser,"="; default="", transform_seq=1),
-                lines_stop(wikitext; until=alt("|","}")),
-                opt(newline);
+function wiki_expression(wikitext, key_parser=re"[-[:alnum:]. _,*]*")
+    with_name(
+        :expression,
+        Sequence(
+            "{{#",
+            word,":", whitespace_maybe,
+            join(
+                Sequence(
+                    v -> v[1] => v[2],
+                    Optional(Sequence(1,!!key_parser,"="); default=""),
+                    lines_stop(wikitext; until=Either("|","}")),
+                    Optional(newline))
                 ## todo: in parser have default option to intern string during building instance
-                transform = (v,i) -> intern(v[1]) => v[2]),
-            "|"),
-        "}}"; 
-        transform=(v,i) -> Template(("#"*v[2]),v[5]))
+                ,
+                "|"),
+            "}}") do v
+        Template(("#"*v[2]),v[5])
+        end)
 end
 
-function wiki_template(wikitext, x=r"[^}{\|]+", key_parser=r"^[-[:alnum:]. _,*]*")
-    seq(
-        Template{NamedString,LineContent},
-        "{{",
-        ( x === nothing ? instance(String, (v,i) -> join(string.(v)), rep_stop(wikitext, alt("|","}"))) :
-          x ),
-        rep_until(
-            seq(Pair{String, Paragraph{NamedString,LineContent}},
-                opt(newline),
-                "|",
-                opt(r"^[ \t\n\r]*",key_parser,"="; default="", transform_seq=2),
-                lines_stop(wikitext; until=alt("|","}")),
-                opt(newline);
+function wiki_template(wikitext, x=re"[^}{\|]+", key_parser=re"[-[:alnum:]. _,*]*")
+    stop_at=Either("|","}")
+    with_name(
+        :template,
+        Sequence(
+            "{{",
+            ( x === nothing ? !!Repeat_stop(wikitext, stop_at) :
+              x ),
+            Repeat_until(
+                with_name(
+                    :template_arg,
+                    Sequence(
+                        v -> v[3] => v[4],
+                        Optional(newline),
+                        "|",
+                        Optional(Sequence(2,re"[ \t\n\r]*",
+                                          !!key_parser,"="); default=""),
+                        lines_stop(wikitext; until=stop_at),
+                        Optional(newline))),
                 ## todo: in parser have default option to intern string during building instance
-                transform = (v,i) -> intern(v[3]) => v[4]),
-            "}}"); 
-        transform=(v,i) -> Template((v[2]),v[3]))
+                "}}")) do v
+        Template(v[2],v[3])
+        end
+    )
 end
 
 function template_parameter(wikitext)
-    seq(
-        TemplateParameter,
-        "{{{",
-        rep_stop(wikitext,alt("|","}")),
-        opt(seq("|", lines_stop(wikitext,until=alt("|","}"));
-                transform=2)),
-        "}}}"; 
-        transform=(v,i) -> TokenPair(v[2],v[3]))
+    with_name(
+        :template_parameter,
+        Sequence(
+            "{{{",
+            Repeat_stop(wikitext,Either("|","}")),
+            Optional(Sequence(2,"|", lines_stop(wikitext,until=Either("|","}")))),
+            "}}}") do v
+        TokenPair(v[2],v[3])
+        end)
 end
 
 
-heading(n,wikitext) = seq(
-    Line{NamedString, LineContent},
-    Regex("^={$n,$n} *"),
-    rep_until(wikitext,
-              seq(Regex("^ *={$n,$n}"), NegativeLookahead("="))),
-    rep_stop(wikitext, newline); ## comments sometimes follow
-    transform = (v,i) -> Line{NamedString, LineContent}(
-        [ NamedString(:headline,intern(string(n))) ],
-        ##(@show v[2])))
-        isempty(v[3]) ? v[2] : push!(v[2], Node(:suffix, Token[],v[3]))))
-
-newlinetoken = instance(Token,newline,:delimiter)
-
-htmlescape = instance(Token, r"^&(?:[[:alpha:]]+|#[[:digit:]]+);"i, :htmlescape)
-export wikitoken, wikitext, valid_html_tags
-function wikitoken(;namespace = "wikt:de")
-    wikitext=alt(
-        LineContent,
-        bracket_number, ## todo: make a line type? see ordo [5]a-c
-        bracket_reference,
-        seq(TokenPair{Symbol, Vector{Token}},
-            rep1(seq(word, "·"; transform=1)), word,
-            transform = (v,i) -> TokenPair(:hyphenation, Token[Token(:syllable,x)
-                                                               for x in ( v[1]..., v[2]) ]))
+heading(n,wikitext) =
+    with_name(
+        "heading $n",
+        Sequence(
+            Repeat(n,'='),
+            whitespace_horizontal,
+            Repeat_until(
+                wikitext,
+                Sequence(
+                    whitespace_horizontal,
+                    Repeat(n,'='),
+                    NegativeLookahead("="))),
+            Repeat_stop(wikitext, newline)
+        ) do v
+        Line{NamedString, LineContent}(
+            [ NamedString(:headline,intern(string(n))) ],
+            isempty(v[4]) ? v[3] : push!(v[3], Node(:suffix, Token[],v[4])))
+        end
     )
 
-    wikitokens = alt(
-        simple_tokens...,
-        instance(Token, r".", :unknown))
+Token(value,name::Symbol) = name => value
+newlinetoken = instance(Token,!!newline,:delimiter)
+
+wikitokens = Either(
+    simple_tokens...,
+    instance(Token, !!re".", :unknown))
+
+linkparser = map(
+    Sequence(!!re"https?|ftp",
+             "://",
+             !!re"[-[:alpha:][:digit:]?=&#+\._%:]+",
+             !!Optional(re"/[-:,;~\$\p{L}[:digit:]?=&#+\./_%()*!|]*"))) do v
+                 query = v[4] === nothing ? Token[] : tokenize(Repeat(wikitokens), v[4])
+                 TokenPair(:link, Token[ Token(:protocol, v[1]),
+                                         delim"://",
+                                         Token(:domain, v[3]),
+                                         query... ])
+             end
+
+wiki_external_link = Sequence(2,'[',linkparser,']')
+
+
+htmlescape = instance(Token, !!re"&(?:[[:alpha:]]+|#[[:digit:]]+);"i, :htmlescape)
+export wikitoken, wikitext, valid_html_tags
+function wikitoken(;namespace = "wikt:de")
+    wikitext=Either{LineContent}(
+        bracket_number, ## todo: make a line type? see ordo [5]a-c
+        bracket_reference,
+        map(
+            join(Repeat(2,Repeat_max,word), "·")) do v
+        TokenPair(:hyphenation,
+                  Token[Token(:syllable,x)
+                        for x in v ])
+        end)
+    
     
     for p in [
         ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
@@ -391,34 +410,17 @@ function wikitoken(;namespace = "wikt:de")
         push!(wikitext, p)
     end
 
-    inner_newline = instance(Token, (v,i) -> Token(:whitespace, intern(v)), parser(newline))
+    inner_newline = instance(Token, !!newline, :whitespace)
 
 
     
-    ## push!(wikitext, parenthesisTempered(:link, r"^(?:https?|ftp).*", "[","]"))
-    linkparser = instance(TokenPair{Symbol,Vector{Token}},
-                          (v,i) -> begin
-                          query = v[3] === nothing ? Token[] : tokenize(rep(wikitokens), v[3])
-                          TokenPair(:link, Token[ Token(:protocol, v[1]),
-                                                  delim"://",
-                                                  Token(:domain, v[2]),
-                                                  query... ])
-                          end,
-                          r"^(https?|ftp)://([-[:alpha:][:digit:]?=&#+\._%:]+)(/[-:,;~\$\p{L}[:digit:]?=&#+\./_%()*!|]*)?")
     push!(wikitext, linkparser)
     push!(wikitext, sloppyhtml(wikitext))
 
     push!(wikitext, wiki_link(wikitext;namespace = namespace));
-
-    push!(wikitext,instance(Token, (v,i) -> Token(:ellipsis,v),
-                            Regex("^"*regex_string("[…]"))))
+    push!(wikitext,
+          instance(Token, !!parser("[…]"), :ellipsis))
     
-    # wiki_external_link = instance(
-    #     TokenPair,
-    #     (v,i) -> tokenize(linkparser,v[1]), ## todo: v[2] label
-    #     r"^\[((?:https?|ftp)[^][ ]+)( [^][]*)?\]"
-    # )
-
     ## push!(wikitext,wiki_external_link);
 
     push!(wikitext,template_parameter(wikitext));
@@ -427,19 +429,15 @@ function wikitoken(;namespace = "wikt:de")
 
     push!(wikitext,table_parser(wikitext));
 
-    push!(wikitext, parenthesisP(:htmlcomment, alt(wikitext,newlinetoken)))
+    push!(wikitext, parenthesisP(:htmlcomment, Either(wikitext,newlinetoken)))
 
     push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
     push!(wikitext, parenthesisP(:bracket, wikitext))
-##    push!(wikitext, parenthesisP(:curly))
-##    push!(wikitext, parenthesisP(:angle))
-##    push!(wikitext, parenthesisP(:quote))
-    push!(wikitext, parenthesisTempered(:bolditalics, rep(wikitext)))
-    push!(wikitext, parenthesisTempered(:bold, rep(wikitext)))
-    push!(wikitext, parenthesisTempered(:italics, rep(wikitext)))
-##    push!(wikitext, parenthesisP(:squote))
-##    push!(wikitext, parenthesisP("'''"))
+    push!(wikitext, parenthesisTempered(:bolditalics, Repeat(wikitext)))
+    push!(wikitext, parenthesisTempered(:bold, Repeat(wikitext)))
+    push!(wikitext, parenthesisTempered(:italics, Repeat(wikitext)))
     push!(wikitext, parenthesisP(:german_quote, wikitext))
+    
     push!(wikitext, wikitokens)
     wikitext
 end
@@ -463,14 +461,14 @@ end
 
 # inner_template_names = [
 #     "erweitern",
-#     "Wortart", r"Pl.[0-9]?", "Gen.", "n",
+#     "Wortart", re"Pl.[0-9]?", "Gen.", "n",
 #     "Prät.", "Part.",
 #     "Sprache","de", "en", "cs",
-#     r"[a-z]", ## todo: only valid word type abbrevs!
-#     r"[a-z][a-z]", ## todo: only valid language codes!
-#     r"Übersetzungen[ [:alnum:]]*", "Ü",
+#     re"[a-z]", ## todo: only valid word type abbrevs!
+#     re"[a-z][a-z]", ## todo: only valid language codes!
+#     re"Übersetzungen[ [:alnum:]]*", "Ü",
 #     "Beispiele fehlen",
-#     r"Ref-[[:alpha:]]+",
+#     re"Ref-[[:alpha:]]+",
 #     "IPA",
 #     "Hörbeispiele", "Audio",
 #     "Reime", "Reim",
@@ -479,7 +477,7 @@ end
 #     "Beispiele fehlen"
 # ]
 ## too feeble: push!(wiki_template.els[2].els.els,wiki_template)
-## inner_templates = alt(inner_template_names...) ## todo: only valid language codes!)
+## inner_templates = Either(inner_template_names...) ## todo: only valid language codes!)
 using TranscodingStreams
 using CodecBzip2
 using LibExpat
@@ -535,7 +533,7 @@ function parse_bz2(f::Function,
                 # end
                 ## @show ignore
                 ##name in record && print(text)
-                ## text = replace(text, r"^[ \t\n]*|[ \t\n]*$" => "")
+                ## text = replace(text, re"[ \t\n]*|[ \t\n]*$" => "")
                 name = intern(name)
                 if !( name in value || name in record || name in ignore || name in types )
                     println("\n\n--\nWhat to do with $name? (r)record, (i)gnore, (v)alue\n$text\n$(r[end])")
@@ -552,7 +550,7 @@ function parse_bz2(f::Function,
                 if name in value || isempty(r[end])
                     ## @show name r[end]
                     pop!(r)
-                    text =  trim(join(filter(x-> x!="",text))) #  * txt, r"^[ \t\n\r]*|[ \t\n\r]*$" => "")
+                    text =  trim(join(filter(x-> x!="",text))) #  * txt, re"[ \t\n\r]*|[ \t\n\r]*$" => "")
                     (!isempty(r) && text !="") && push!(r[end].second, name => text)
                     text = []
                 elseif name in types
@@ -562,7 +560,7 @@ function parse_bz2(f::Function,
                     val = pop!(r)
                     val = (; ( Symbol(k.first) => k.second for k in val.second)...)
                     if !(:title in propertynames(val) &&
-                         match(r"Wiktionary:|MediaWiki:",val.title)!==nothing)
+                         match(re"Wiktionary:|MediaWiki:",val.title)!==nothing)
                         ## show(results[end])
                         if :revision in propertynames(val) && :text in propertynames(val.revision) && !startswith(val.revision.text, "{{NOINDEX}}")
                             count = count + 1
@@ -589,10 +587,9 @@ ignore_heading = (v, i) -> begin
 end
 
 
-image_argument_parser = instance(
-    Vector{NamedString},
+image_argument_parser = map_at(
     (v,i) -> [ NamedString("image", v[2]), NamedString("property", v[1]) ],
-    r"^(Bild[^[:digit:]]*)([[:digit:]]*)$")
+    re"(Bild[^[:digit:]]*)([[:digit:]]*)$")
 
 
 function prepend_prefix!(v::Vector{<:Line},y)    
@@ -613,7 +610,6 @@ word_string(w) =
 
 function parse_overview(namespace, title, w, t::Nothing)
     ## language = v.word[1].tokens[3],
-    ## @show w,t
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String,Token}[]
     language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[end])[1].arguments[1].second), "",""
@@ -628,13 +624,17 @@ end
 
 function parse_overview(namespace, title, w, t::Template)
     ## language = v.word[1].tokens[3],
-    ## @show w,t
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String, Token}[]
-    overview_parser = instance(Vector{String},
-                               (v,i) -> String[intern(v[1]),intern(substnothing("",v[2])),v[3]===nothing ? "" : intern(v[3])],
-                               r" *([-\p{L}]+) +(.*[^ ])? *Übersicht *(.*[^ ])? *(?:\r?\n)*";
-                               )
+    overview_parser =
+        Sequence(whitespace_maybe, !!re"[-\p{L}]+", whitespace_horizontal,
+                 !!Optional(re".*[^ ]"),
+                 Optional(re" *Übersicht *"),
+                 !!Optional(re".*[^ ]"),
+                 whitespace_maybe,
+                 Repeat(newline)) do v
+                     String[v[2],v[4],v[6]]
+                 end
     language, wordtype, genus = tokenize(overview_parser, t.template)
     args = Pair{String,AbstractToken}[]
     for (i,a) in enumerate(t.arguments)
@@ -654,7 +654,7 @@ function parse_overview(namespace, title, w, t::Template)
             else
                 push!(inflections, a.first => Token(:literal,string(val)))
                 # imp = tokenize(
-                #     r"^([^[:digit:]]+|[[:digit:]]\. Person) *([[:digit:]]*)",
+                #     re"([^[:digit:]]+|[[:digit:]]\. Person) *([[:digit:]]*)",
                 #     a.first)
                 # if imp !== nothing
                 #     push!(inflections, Token(imp[1],string(val)))
@@ -676,67 +676,65 @@ function parse_overview(namespace, title, w, t::Template)
 end
 
 
-      
+
 function parse_overview(namespace, title, w, v::Vector{<:Line})
     parse_overview(namespace, title, w, isempty(v) ? nothing : v[1].tokens[1])
 end
 
 wiktionary_de_content=[
-                is_template_line("Übersetzungen", ignore, Missing) => (:translations, is_line()),
-                is_template_line(t -> match(r"Übersicht", t.template)!==nothing) => (:overview, missing),
-                is_template_line("Nebenformen", ignore, Missing) => (:variants, is_line()),
-                is_template_line("Entlehnungen", ignore, Missing) => (:variants, is_line()),
-                is_template_line("Nicht mehr gültige Schreibweisen") => (:deprecated, is_line()),
-                is_template_line("Alternative Schreibweisen") => (:versions, is_line()),
-                is_template_line("Anmerkungen", ignore, Missing) => (:annotations, is_line()),
-                is_template_line("Anmerkung", ignore, Missing) => (:annotations, is_line()),
-                is_template_line("Worttrennung", ignore, Missing) => (:hyphenation, is_line()),
-                is_template_line("Aussprache", ignore, Missing) => (:phonetic, is_line()),
-                is_template_line("Oberbegriffe", ignore, Missing) => (:superterms, is_line()),
-                is_template_line("Unterbegriffe", ignore, Missing) => (:subterms, is_line()),
-                is_template_line("Teilbegriffe", ignore, Missing) => (:parts, is_line()),
-                is_template_line("Bedeutungen", ignore, Missing) => (:meaning, is_line()),
-                is_template_line("Synonyme", ignore, Missing) => (:synonyms, is_line()),
-                is_template_line("Weibliche Wortformen", ignore, Missing) => (:synonyms, is_line()),
-                is_template_line("Männliche Wortformen", ignore, Missing) => (:synonyms, is_line()), # exists?
-                is_template_line("Sinnverwandte Wörter", ignore, Missing) => (:synonyms, is_line()),
-                is_template_line("Wortbildungen", ignore, Missing) => (:formations, is_line()),
-                is_template_line("Gegenwörter", ignore, Missing) => (:antonyms, is_line()),
-                is_template_line("Abkürzungen", ignore, Missing) => (:abbreviations, is_line()),
-                is_template_line("Wortfamilie", ignore, Missing) => (:family, is_line()),
-                is_template_line("Grammatische Merkmale", ignore, Missing) => (:grammar, is_line()),
-                is_template_line("Redewendungen", ignore, Missing) => (:phrases, is_line()),
-                #:similar => is_template_line(r"^Ähnlichkeiten[ 0-9]*"),
-                is_template_line("Siehe auch", ignore, Missing) => (:etymology, is_line()),
-                is_template_line("erweitern", ignore, Missing) => (:etymology, is_line()),
-                is_template_line("Herkunft", ignore, Missing) => (:etymology, is_line()),
-                is_template_line("Beispiele", ignore, Missing) => (:examples, is_line()),
-                is_template_line("Beispiele fehlen") => (:examples, is_line()),
-                is_template_line("erweitern") => (:examples, is_line()),
-                is_template_line("Charakteristische Wortkombinationen", ignore, Missing) => (:combinations, is_line()),
-                is_template_line("Referenzen", ignore, Missing) => (:references, is_line()),
-                is_template_line("Quellen", ignore, Missing) => (:sources, is_line())
-            ]
+    is_template_line("Übersetzungen", ignore, Missing) => (:translations, is_line()),
+    is_template_line(t -> match(re"Übersicht", t.template)!==nothing) => (:overview, missing),
+    is_template_line("Nebenformen", ignore, Missing) => (:variants, is_line()),
+    is_template_line("Entlehnungen", ignore, Missing) => (:variants, is_line()),
+    is_template_line("Nicht mehr gültige Schreibweisen") => (:deprecated, is_line()),
+    is_template_line("Alternative Schreibweisen") => (:versions, is_line()),
+    is_template_line("Anmerkungen", ignore, Missing) => (:annotations, is_line()),
+    is_template_line("Anmerkung", ignore, Missing) => (:annotations, is_line()),
+    is_template_line("Worttrennung", ignore, Missing) => (:hyphenation, is_line()),
+    is_template_line("Aussprache", ignore, Missing) => (:phonetic, is_line()),
+    is_template_line("Oberbegriffe", ignore, Missing) => (:superterms, is_line()),
+    is_template_line("Unterbegriffe", ignore, Missing) => (:subterms, is_line()),
+    is_template_line("Teilbegriffe", ignore, Missing) => (:parts, is_line()),
+    is_template_line("Bedeutungen", ignore, Missing) => (:meaning, is_line()),
+    is_template_line("Synonyme", ignore, Missing) => (:synonyms, is_line()),
+    is_template_line("Weibliche Wortformen", ignore, Missing) => (:synonyms, is_line()),
+    is_template_line("Männliche Wortformen", ignore, Missing) => (:synonyms, is_line()), # exists?
+    is_template_line("Sinnverwandte Wörter", ignore, Missing) => (:synonyms, is_line()),
+    is_template_line("Wortbildungen", ignore, Missing) => (:formations, is_line()),
+    is_template_line("Gegenwörter", ignore, Missing) => (:antonyms, is_line()),
+    is_template_line("Abkürzungen", ignore, Missing) => (:abbreviations, is_line()),
+    is_template_line("Wortfamilie", ignore, Missing) => (:family, is_line()),
+    is_template_line("Grammatische Merkmale", ignore, Missing) => (:grammar, is_line()),
+    is_template_line("Redewendungen", ignore, Missing) => (:phrases, is_line()),
+    #:similar => is_template_line(re"Ähnlichkeiten[ 0-9]*"),
+    is_template_line("Siehe auch", ignore, Missing) => (:etymology, is_line()),
+    is_template_line("erweitern", ignore, Missing) => (:etymology, is_line()),
+    is_template_line("Herkunft", ignore, Missing) => (:etymology, is_line()),
+    is_template_line("Beispiele", ignore, Missing) => (:examples, is_line()),
+    is_template_line("Beispiele fehlen") => (:examples, is_line()),
+    is_template_line("erweitern") => (:examples, is_line()),
+    is_template_line("Charakteristische Wortkombinationen", ignore, Missing) => (:combinations, is_line()),
+    is_template_line("Referenzen", ignore, Missing) => (:references, is_line()),
+    is_template_line("Quellen", ignore, Missing) => (:sources, is_line())
+]
 
 export wiktionary_defs
 wiktionary_defs =
-    rep(seq(
-        NamedTuple,
-        :prefix => rep(is_line()),
-        :word => seq(is_heading(x -> isequal(x.value,"2")),
-                     rep(is_line())),
-        :defs => rep(seq(is_heading(x -> isequal(x.value,"3")),
-                         greedy(wiktionary_de_content...; alt=[:lines => is_line() ]))
-                    );
-        log = false
-        ##,transform = (v,i) -> v
+    Repeat(Sequence(
+        :prefix => Repeat(is_line()),
+        :word => Sequence(is_heading(x -> isequal(x.value,"2")),
+                          Repeat(is_line())),
+        :defs => Repeat(Sequence(is_heading(x -> isequal(x.value,"3")),
+                                 greedy(wiktionary_de_content...; alt=[:lines => is_line() ]))
+                        )
     ));
 
-number_line = seq(Pair{String,Vector{LineContent}},
-                  IteratorParser{String}("index", x->x isa Token && variable(x)==:number, (t,i) -> value(t)),
-                  rep(IteratorParser{Token}("whitespace", x->x isa Token && !isinformative(x), (t,i) -> t)),
-                  rep(IteratorParser{LineContent}("rest", x->x isa LineContent, (t,i) -> t));
-                  transform=(v,i) -> v[1] => v[3]);
+number_line = Sequence(
+    IteratorParser{String}("index", x->x isa Token && variable(x)==:number, (t,i) -> value(t)),
+    Repeat(IteratorParser{Token}("whitespace", x->x isa Token && !isinformative(x), (t,i) -> t)),
+    Repeat(IteratorParser{LineContent}("rest", x->x isa LineContent, (t,i) -> t))) do v
+        v[1] => v[3]
+    end
 
 
 export wiki_meaning
@@ -756,11 +754,11 @@ function wiki_meaning(title,v;namespace = "wikt:de")
         end
         for (k,v) in wt[2]
             x = tokenize(
-                rep(is_line(Pair{String,Vector{LineContent}},
-                            (l, i) -> let (r,i_) = tryparsenext(number_line, l.tokens)
-                            isnull(r) ? "?" => l.tokens : get(r)
-                            end
-                            )),
+                Repeat(is_line(Pair{String,Vector{LineContent}},
+                               (l, i) -> let (r,i_) = tryparsenext(number_line, l.tokens)
+                               isnull(r) ? "?" => l.tokens : get(r)
+                               end
+                               )),
                 v)
             lastnum = "?"
             for e in x
@@ -813,20 +811,6 @@ function wiki_meaning(title,v;namespace = "wikt:de")
 end
 
 
-export promote_missing
-function promote_missing(x)
-    nt=Vector{Pair{Symbol, Type}}()
-    for i in x
-        for n in propertynames(i)
-            t_ = fieldtype(typeof(i),n)
-            t = get!(nt, n, t_)
-            t != t_
-            nt[n] = promote_type(t, t_)
-        end
-    end
-    T=NamedTuple{tuple(keys(nt)...), Tuple{values(nt)...}}
-    [ convert(T, i) for i in x ]
-end
 
 
 end # module
