@@ -60,7 +60,12 @@ import WikitextParser: expand_numbers
 end
 
 
+
 @testset "html" begin
+    @test parse(WikitextParser.attributes, "class=\"a\" class=\"b\"") == [Token(:class,"a"), Token(:class,"b")]
+    @test parse(WikitextParser.attributes, "size=10% class=\"b\"") == [Token(:size,"10%"), Token(:class,"b")]
+    @test parse(WikitextParser.attributes, "class=simple") == [Token(:class,"simple")]
+    @test parse(wikitext(), "<font>a</font>") == aline(Node(:font,[],aline(l"a")))
     wtp = wikitext();
     ## TODO: profile and optimize
     x = wtp("<ref name=\"Georges\">{{Ref-Georges}}</ref>")
