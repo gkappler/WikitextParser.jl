@@ -15,7 +15,7 @@ word_string(w) =
 function parse_overview(namespace, title, w, t::Nothing)
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String,Token}[]
-    language, wordtype, genus = string(value(filter(t-> t isa TokenPair && variable(t)==:paren,w[1].tokens)[end])[1].arguments[1].second), "",""
+    language, wordtype, genus = string((filter(t-> t isa Template,w[1].tokens)[end].arguments[1].second)), "",""
     ( word = Token(:literal, intern(word_string(w))),
       title = Token(:literal, intern(title)), 
       language = Token(:language,language),
