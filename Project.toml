@@ -19,6 +19,7 @@ InternedStrings = "0.7"
 TranscodingStreams = "0.9"
 AutoHashEquals = "0.2"
 CodecBzip2 = "0.7"
+TextParse = "1.0"
 julia = "1"
 
 [extras]
