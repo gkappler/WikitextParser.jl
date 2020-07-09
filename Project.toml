@@ -20,6 +20,7 @@ TranscodingStreams = "0.9"
 AutoHashEquals = "0.2"
 CodecBzip2 = "0.7"
 TextParse = "1.0"
+LibExpat = "0.6"
 julia = "1"
 
 [extras]
