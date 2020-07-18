@@ -89,13 +89,15 @@ import CombinedParserTools.Tokens: attribute_parser
 attr_line(inner_word,stop=newline) =
     map(Atomic(Repeat_stop(
         Either(attribute_parser, inner_word),stop))) do v
-            [ t
+            result_type(inner_word)[ t
               for t in v #parse(Repeat(el),v)
               if isinformative(t) ]
         end
 
 
 function table_cell_parser(inner_word::TextParse.AbstractToken{<:AbstractToken}, node="td")
+    A = result_type(inner_word)
+    T = Line{NamedString,A}
     table_delim = CharIn("!|")
     inner = lines_stop(inner_word; until=table_delim)
     with_name(
@@ -108,29 +110,35 @@ function table_cell_parser(inner_word::TextParse.AbstractToken{<:AbstractToken},
                         1,
                         attr_line(inner_word,Either(newline,"|")),
                         Sequence("|", NegativeLookahead("|"))))),
-            map(Line,
+            map(T,
                 Repeat_stop(inner_word,
                             Either("\n","||","!!")))
             , Optional( (
                 Sequence(3, newline, NegativeLookahead(table_delim), inner)))
             , Repeat(instance(Token,!!newline,:delimiter))) do v
-        Node( node, v[1], [ v[2], v[3]..., v[4]... ] )
+        Node( node, v[1], T[ v[2], v[3]..., T(v[4]) ] )::Node{A,T}
         end
     )
 end
 
 function table_cell_parsers(inner_word)
+    A = result_type(inner_word)
+    T = Line{NamedString,A}
     with_name(
         :table_cells,
         Sequence(
+            Repeat(Sequence(1,parenthesisP(:htmlcomment, inner_word),newline)),
             Either(
                 Sequence(2,"!",table_cell_parser(inner_word, "th")),
-                Sequence(2,re"\|(?![-}])",table_cell_parser(inner_word, "td"))),
+                Sequence(2,re"\|(?![-}])",table_cell_parser(inner_word, "td"))
+            ),
             Repeat(
                 Either(
                     Sequence(2,"!!",table_cell_parser(inner_word, "th")),
                     Sequence(2,"||",table_cell_parser(inner_word, "td"))))) do v
-        pushfirst!(v[2],v[1])
+        pushfirst!(v[3],v[2])
+        pushfirst!(v[3][1].children,T(v[1]))
+        v[3]
         end
     )
 end
@@ -149,27 +157,27 @@ function table_parser(inner_word)
         :table,
         Sequence(
             "{|", Sequence(1,attr_line(inner_partial_html), newline)
-            # 4
+            # 3
             , Optional(Sequence(
                 2, "|+",
                 Repeat_until(inner_word,newline)))
-            # 5 
+            # 4 
             , Repeat(table_cell_parsers(inner_partial_html))
             , Repeat(
-                Sequence(N,
-                         re"\|-+", Sequence(1,attr_line(inner_partial_html), newline),
-                         Repeat(table_cell_parsers(inner_partial_html))) do v
-                Node{AbstractToken,AbstractToken}("tre", v[2], vcat(v[3]...))
+                Sequence(
+                    re"\|-+", Sequence(1,attr_line(inner_partial_html), newline),
+                    Repeat(table_cell_parsers(inner_partial_html))) do v
+                Node{AbstractToken,N}("tr", v[2], vcat(v[3]...))
                 end),
             Repeat(whitespace_newline),
             "|}") do v
         if !isempty(v[4])
         pushfirst!(v[5],
-                   Node("tr", AbstractToken[], vcat(v[4]...)))
+                   Node{AbstractToken,N}("tr", AbstractToken[], vcat(v[4]...)))
         end
         if !isempty(v[3])
         pushfirst!(v[5],
-                   Node("caption", AbstractToken[], vcat(v[3]...)))
+                   Node{AbstractToken,N}("caption", AbstractToken[], vcat(v[3]...)))
         end
         Node{AbstractToken,N}("table",v[2], v[5])
         end
@@ -241,6 +249,7 @@ sloppyhtml(inner_token; stop=tuple()) =
             simple_tokens_intag("math"),
             simple_tokens_intag("pre"),
             simple_tokens_intag("code"),
+            parenthesisP(:htmlcomment, Either(inner_token,newlinetoken), stop),
             html(Line{NamedString,AbstractToken},
                  !anyhtmltag) do until
             Sequence(
@@ -276,7 +285,7 @@ wiki_content(wikitext;until) =
         end
 wiki_lines(wikitext;kw...) = [ wiki_list(wikitext;kw...), wiki_content(wikitext;kw...) ];
 
-function parenthesisP(name::Symbol, wikitext, open::String, close=open, stops...)
+function parenthesisP(name::Symbol, wikitext, open::String, close=open, stops=tuple())
     with_name(
         name,
         Sequence(# TokenPair{Symbol, Vector{LineContent}},
@@ -285,8 +294,8 @@ function parenthesisP(name::Symbol, wikitext, open::String, close=open, stops...
         end)
 end
 
-function parenthesisP(name::Symbol, wikitext,stops...)
-    parenthesisP(name, wikitext, wiki_parentheses[name]...,stops...)
+function parenthesisP(name::Symbol, wikitext,stops=tuple())
+    parenthesisP(name, wikitext, wiki_parentheses[name]...,stops)
 end
 
 lines_stop(wikitext;until) =
@@ -343,7 +352,7 @@ function wiki_template(wikitext, x=re"[^}{\|]+", key_parser=re"[-[:alnum:]. _,*]
                         Optional(newline))),
                 ## todo: in parser have default option to intern string during building instance
                 "}}")) do v
-        Template(v[2],v[3])
+        Template(v[2],v[3])::Template
         end
     )
 end
@@ -450,7 +459,6 @@ function wikitoken(;namespace = "wikt:de", parentheses=false, quotes=false)
 
     push!(wikitext,table_parser(wikitext));
 
-    push!(wikitext, parenthesisP(:htmlcomment, Either(wikitext,newlinetoken)))
 
     if parentheses
         push!(wikitext, parenthesisP(:paren, wikitext)) ## used for filtering from wiki word in meaning 
@@ -458,9 +466,9 @@ function wikitoken(;namespace = "wikt:de", parentheses=false, quotes=false)
         push!(wikitext, parenthesisP(:curly, wikitext))
         push!(wikitext, parenthesisP(:angle, wikitext))
     end
-    push!(wikitext, parenthesisP(:bolditalics, wikitext,newline))
-    push!(wikitext, parenthesisP(:bold, wikitext,newline))
-    push!(wikitext, parenthesisP(:italics, wikitext,newline))
+    push!(wikitext, parenthesisP(:bolditalics, wikitext, tuple(newline)))
+    push!(wikitext, parenthesisP(:bold, wikitext,tuple(newline)))
+    push!(wikitext, parenthesisP(:italics, wikitext,tuple(newline)))
     if quotes
         push!(wikitext, parenthesisP(:quote, wikitext))
         push!(wikitext, parenthesisP(:squote, wikitext))
