@@ -336,7 +336,7 @@ function wiki_template(wikitext, x=re"[^}{\|]+", key_parser=re"[-[:alnum:]. _,*]
     with_name(
         :template,
         Sequence(
-            "{{",
+            "{{",NegativeLookahead('{'),
             ( x === nothing ? !!Repeat_stop(wikitext, stop_at) :
               x ),
             Repeat_until(
@@ -352,7 +352,7 @@ function wiki_template(wikitext, x=re"[^}{\|]+", key_parser=re"[-[:alnum:]. _,*]
                         Optional(newline))),
                 ## todo: in parser have default option to intern string during building instance
                 "}}")) do v
-        Template(v[2],v[3])::Template
+        Template(v[3],v[4])::Template
         end
     )
 end
@@ -363,8 +363,8 @@ function template_parameter(wikitext)
         :template_parameter,
         Sequence(
             "{{{",
-            Repeat_stop(wikitext,CharIn("|}")),
-            Optional(Sequence(2,"|", inner)),
+            Repeat_stop(Atomic(wikitext),CharIn("|}")),
+            Optional(Atomic(Sequence(2,"|", inner))),
             "}}}") do v
         TokenPair(v[2],v[3])
         end)
