@@ -54,7 +54,7 @@ macro substringorempty(x,range)
 end
 
 
-export Template, LineContent
+export TemplateArgument, Template, LineContent
 """
 Wikitext template arguments are stored with `ta=name => value`.
 An unnamed template argument has `t.first==""`.
