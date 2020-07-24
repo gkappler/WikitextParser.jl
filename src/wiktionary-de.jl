@@ -16,7 +16,7 @@ function parse_overview(namespace, title, w, t::Nothing)
     images = Line{NamedString,LineContent}[]
     inflections = Pair{String,Token}[]
     language, wordtype, genus = string((filter(t-> t isa Template,w[1].tokens)[end].arguments[1].second)), "",""
-    ( word = Token(:literal, intern(word_string(w))),
+    ( # word = Token(:literal, intern(word_string(w))),
       title = Token(:literal, intern(title)), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
@@ -63,7 +63,7 @@ function parse_overview(namespace, title, w, t::Template)
             end
         end
     end
-    ( word = Token(:literal, intern(intern(word_string(w)))),
+    ( # word = Token(:literal, intern(intern(word_string(w)))),
       title = Token(:literal, intern(title)), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
@@ -211,8 +211,9 @@ function wiki_meaning(title,v;namespace = "wikt:de")
         end
         val = get(meaning_data,"?",Dict())
         base = parse_overview(namespace, title, v.word, getval(val,:overview).second)
-        meanings = [ ( title=base.title
-                       , word=base.word, order=m,
+        meanings = [ ( title=base.title,
+                       # , word=base.word,
+                       order=m,
                        ( getval(val,p)
                          for p in fields)... )
                      for (m,val) in pairs(meaning_data)
