@@ -17,7 +17,7 @@ function parse_overview(namespace, title, w, t::Nothing)
     inflections = Pair{String,Token}[]
     language, wordtype, genus = string((filter(t-> t isa Template,w[1].tokens)[end].arguments[1].second)), "",""
     ( # word = Token(:literal, intern(word_string(w))),
-      title = Token(:literal, intern(title)), 
+      title = Token(namespace, intern(title)), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
@@ -64,7 +64,7 @@ function parse_overview(namespace, title, w, t::Template)
         end
     end
     ( # word = Token(:literal, intern(intern(word_string(w)))),
-      title = Token(:literal, intern(title)), 
+      title = Token(namespace, intern(title)), 
       language = Token(:language,language),
       wordtype = Token(:wordtype,wordtype),
       inflections = inflections,
