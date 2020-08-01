@@ -19,7 +19,7 @@ newlinetoken = instance(Token,!!newline,:delimiter)
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
 simple_tokens =
     @annotate [ :number     => !!re"[0-9]+"
-                , !!capitalized
+                ## , !!capitalized
                 , :literal  => !!word
                 , :delimiter => !!delimiter
                 , :footnote => !!footnote
