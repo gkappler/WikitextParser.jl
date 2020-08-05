@@ -37,14 +37,14 @@ end
 
 
 Base.show(io::IO, ::MIME"text/x-wiki", x::WikiLink) =
-    print(io, "[[", value(x.namespace) == "" ? "" : value(x.namespace) * ":",
-          x.page,
+    print(io, "[[", value(x.namespace) == "" ? "" : variable(x.namespace_page) * ":",
+          value(x.namespace_page),
           x.anchor == "" ? "" : "#" * x.anchor,
           x.label == "" ? "" : "|" * x.label,
           "]]")
 
 Base.show(io::IO, x::WikiLink) =
-          printstyled(io, value(x.label)=="" ? value(x.page) : value(x.label); bold=true,
+          printstyled(io, value(x.label)=="" ? value(x.namespace_page) : value(x.label); bold=true,
                       color=36)
 
 export @substringorempty
