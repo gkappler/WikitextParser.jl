@@ -167,14 +167,14 @@ function wiki_meaning(title,v;namespace = "wikt:de")
     fields = [ x.second[1] for x in wiktionary_de_content ]
     function inner(wt)
         meaning_data = Dict{String,Dict{Symbol,Vector{L}}}()
-        function pushit(num,k,val)
+        function push_field(num,f,val)
             meandata = get!(meaning_data, num) do
                 Dict{Symbol,Vector{Line{NamedString,LineContent}}}()
             end
-            data = get!(() -> Line{NamedString,LineContent}[], meandata, k)
-            push!(data, Line(NamedString[], val))
+            data = get!(() -> Line{NamedString,LineContent}[], meandata, f)
+            val !== nothing && push!(data, Line(NamedString[], val))
         end
-        for (k,v) in wt[2]
+        for (f,v) in wt[2]
             x = parse(
                 Repeat(map(is_line()) do l
                        r = tryparse(number_line, l.tokens)
@@ -186,14 +186,20 @@ function wiki_meaning(title,v;namespace = "wikt:de")
                 num = e.first=="?" ? lastnum : e.first
                 let is = tryparse(expand_numbers,InternedStrings.intern(num))
                     if is === nothing
-                        pushit(num,k,e.second)
+                        push_field(num,f,e.second)
                     else
                         for i in is
-                            pushit(i,k,e.second)
+                            push_field(i,f,e.second)
                         end
                     end
                 end
                 lastnum=num
+            end
+        end
+        ## fill meaning_data values with all section defs
+        for f in fields
+            for num in keys(meaning_data)
+                push_field(num,f,nothing)
             end
         end
         common = get(()->Dict{Symbol,Vector{L}}(), meaning_data,"[*]")
@@ -224,8 +230,8 @@ function wiki_meaning(title,v;namespace = "wikt:de")
                 (;( getval(val,p)
                     for p in fields
                     if p != :overview)...
+                 , meanings = meanings
                  )),
-          meanings
           )
     end
     [ inner(wt) for  wt = v.defs ]
