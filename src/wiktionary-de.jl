@@ -159,7 +159,7 @@ number_line = Sequence(
         v[1] => v[3]
     end
 
-
+using Epitypes
 export wiki_meaning
 function wiki_meaning(title,v;namespace = "wikt:de")
     L = Line{NamedString,LineContent}
@@ -216,23 +216,26 @@ function wiki_meaning(title,v;namespace = "wikt:de")
         end
         val = get(meaning_data,"?",Dict())
         base = parse_overview(namespace, title, v.word, getval(val,:overview).second)
-        meanings = [ ( title=base.title,
-                       # , word=base.word,
-                       order=m,
-                       ( getval(val,p)
-                         for p in fields)... )
-                     for (m,val) in pairs(meaning_data)
-                     if !in(m, ["?","[*]"])
-                     ]
+        meanings = [
+            NamedStruct{:meaning}(
+                ( title=base.title,
+                  # , word=base.word,
+                  order=m,
+                  ( getval(val,p)
+                    for p in fields)... ))
+            for (m,val) in pairs(meaning_data)
+            if !in(m, ["?","[*]"])
+        ]
         
-        ( merge(
+        NamedStruct{:word}(
+            merge(
                 base,
                 (;( getval(val,p)
                     for p in fields
                     if p != :overview)...
-                 , meanings = meanings
-                 )),
-          )
+                 , meanings = sort(meanings; by=x->x.order)
+                 ))
+        )
     end
-    [ inner(wt) for  wt = v.defs ]
+    Any[ inner(wt) for  wt = v.defs ]
 end
