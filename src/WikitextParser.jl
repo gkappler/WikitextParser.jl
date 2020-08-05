@@ -19,6 +19,9 @@ newlinetoken = instance(Token,!!newline,:delimiter)
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
 simple_tokens =
     @annotate [ :number     => !!re"[0-9]+"
+                , :acronym => !!Repeat(2,CharIn(isuppercase))
+                , :acronym => !!Repeat(2,Sequence(CharIn(isuppercase),'.'))
+                , :abbrev => !!Repeat(2,Sequence(re"[[:letter:]]",'.'))
                 ## , !!capitalized
                 , :literal  => !!word
                 , :delimiter => !!delimiter
@@ -55,6 +58,17 @@ end;
 end;
 
 @syntax expand_numbers = Sequence(2,"[",numbers,"]");
+
+bracket_number = instance(
+    Token,
+    !re"\[(?:(?:[0-9]+[[:alpha:]]*(?:,|–|-) *)*(?:[0-9]+[[:alpha:]]* *)|\*)\]",
+    :number)
+
+## TODO: merge with bracket_number, tokenize parts
+bracket_reference = instance(
+    Token,
+    !re"\[(?:(?:[0-9]+[[:alpha:]]*(?:,|–|-) *)*(?:[0-9]+[[:alpha:]]* *))\]",
+    :reference)
 
 list_item = Sequence(1, !!re"[*]+|[#]+", whitespace_horizontal) do v
     NamedString[ NamedString(:list,v) ]
@@ -395,17 +409,19 @@ wikitokens = Either(
     simple_tokens,
     instance(Token, !!AnyChar(), :unknown))
 
+## todo: 
 linkparser = map(
     Sequence(!!re"https?|ftp",
              "://",
              !!re"[-[:alpha:][:digit:]?=&#+\._%:]+",
              !!Optional(re"/[-:,;~\$\p{L}[:digit:]?=&#+\./_%()*!|]*"))) do v
-                 query = v[4] === nothing ? Token[] : parse(Repeat(wikitokens), v[4])
                  TokenPair(:link, Token[ Token(:protocol, v[1]),
                                          delim"://",
                                          Token(:domain, v[3]),
-                                         query... ])
+                                         Token(:query, v[4]) ])
              end
+
+
 
 wiki_external_link = Sequence(2,'[',linkparser,']')
 

@@ -2,8 +2,7 @@
 function prepend_prefix!(v::Vector{<:Line},y)    
     for x in v
         prepend!(x.prefix.prefix, y)
-        filter!(t -> !in(t,[ Token(:whitespace, "\n"),
-                             Token(:literal, "—") ]), x.tokens)
+        filter!(t -> !in(value(t),[ "\n", "—" ]), x.tokens)
     end
     filter!(t -> !isempty(t.tokens), v)
 end

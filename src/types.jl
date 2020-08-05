@@ -23,13 +23,12 @@ substnothing(default, x) =
 
 export WikiLink
 @auto_hash_equals struct WikiLink <: AbstractToken ## todo: make Tokens String, in token_lines make tokens with name=field 
-    namespace::Token
-    page::Token
+    namespace_page::Token
     anchor::Token
     label::Token
     function WikiLink(namespace::AbstractString, page::AbstractString, anchor::AbstractString, label::AbstractString, addlabel="")
-        new(Token(:namespace,intern(namespace)), Token(:literal,intern(page)), Token(:anchor,intern(anchor)),
-            Token(:literal, intern(label=="" ? page : label) * addlabel))
+        new(Token(intern(namespace), intern(page)), Token(:anchor,intern(anchor)),
+            Token(:label, intern(label=="" ? page : label) * addlabel))
     end
     function WikiLink(namespace::Token, page::Token, anchor::Token, label::Token)
         new(namespace, page, anchor, label)
